@@ -4,6 +4,9 @@ import shutil
 import os.path
 import re
 
+import numpy as np
+from numpy.distutils.misc_util import get_pkg_info
+
 CLASSIFIERS = filter(None, map(str.strip,
 """
 Development Status :: 5 - Production/Stable
@@ -23,7 +26,8 @@ except(OSError):
 
 module1 = Extension('ujson',
                     sources = ['./python/ujson.c', './python/objToJSON.c', './python/JSONtoObj.c', './lib/ultrajsonenc.c', './lib/ultrajsondec.c'],
-                    include_dirs = ['./python', './lib'])
+                    include_dirs = ['./python', './lib', np.get_include()],
+                    extra_link_args=[get_pkg_info('npymath').libs()])
 
 def get_version():
 	filename = os.path.join(os.path.dirname(__file__), './python/version.h')

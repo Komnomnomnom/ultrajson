@@ -14,6 +14,11 @@ import calendar
 import StringIO
 import re
 
+import numpy as np
+from numpy.testing import (assert_array_equal, assert_array_almost_equal_nulp,
+                           assert_approx_equal)
+
+
 class UltraJSONTests(TestCase):
     def test_encodeDictWithUnicodeKeys(self):
         input = { u"key1": u"value1", u"key1": u"value1", u"key1": u"value1", u"key1": u"value1", u"key1": u"value1", u"key1": u"value1" }
@@ -669,6 +674,126 @@ class UltraJSONTests(TestCase):
         output = ujson.encode(o)
         dec = ujson.decode(output)
         self.assertEquals(dec, d)
+
+
+class NumpyJSONTests(TestCase):
+
+    def testBool(self):
+        b = np.bool(True)
+        self.assertEqual(ujson.decode(ujson.encode(b)), b)
+
+    def testBoolArray(self):
+        inpt = np.array([True, False, True, True, False, True, False , False],
+                         dtype=np.bool)
+        outp = np.array(ujson.decode(ujson.encode(inpt)), dtype=np.bool)
+        assert_array_equal(inpt, outp)
+
+    def testInt(self):
+        num = np.int(2562010)
+        self.assertEqual(np.int(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int8(2562010)
+        self.assertEqual(np.int8(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int16(2562010)
+        self.assertEqual(np.int16(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int32(2562010)
+        self.assertEqual(np.int32(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int64(2562010)
+        self.assertEqual(np.int64(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint8(2562010)
+        self.assertEqual(np.uint8(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint16(2562010)
+        self.assertEqual(np.uint16(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint32(2562010)
+        self.assertEqual(np.uint32(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint64(2562010)
+        self.assertEqual(np.uint64(ujson.decode(ujson.encode(num))), num)
+
+    def testIntArray(self):
+        arr = np.arange(100, dtype=np.int)
+        dtypes = (np.int, np.int8, np.int16, np.int32, np.int64,
+                  np.uint, np.uint8, np.uint16, np.uint32, np.uint64)
+        for dtype in dtypes:
+            inpt = arr.astype(dtype)
+            outp = np.array(ujson.decode(ujson.encode(inpt)), dtype=dtype)
+            assert_array_equal(inpt, outp)
+
+    def testIntMax(self):
+        num = np.int(np.iinfo(np.int).max)
+        self.assertEqual(np.int(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int8(np.iinfo(np.int8).max)
+        self.assertEqual(np.int8(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int16(np.iinfo(np.int16).max)
+        self.assertEqual(np.int16(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int32(np.iinfo(np.int32).max)
+        self.assertEqual(np.int32(ujson.decode(ujson.encode(num))), num)
+
+        num = np.int64(np.iinfo(np.int64).max)
+        self.assertEqual(np.int64(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint8(np.iinfo(np.uint8).max)
+        self.assertEqual(np.uint8(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint16(np.iinfo(np.uint16).max)
+        self.assertEqual(np.uint16(ujson.decode(ujson.encode(num))), num)
+
+        num = np.uint32(np.iinfo(np.uint32).max)
+        self.assertEqual(np.uint32(ujson.decode(ujson.encode(num))), num)
+
+        #num = np.uint64(np.iinfo(np.uint64).max) # TODO always overflow
+        #self.assertEqual(np.uint64(ujson.decode(ujson.encode(num))), num))
+
+    def testFloat(self):
+        num = np.float(256.2013)
+        self.assertEqual(np.float(ujson.decode(ujson.encode(num))), num)
+
+        num = np.float16(256.2013)
+        self.assertEqual(np.float16(ujson.decode(ujson.encode(num))), num)
+
+        num = np.float32(256.2013)
+        self.assertEqual(np.float32(ujson.decode(ujson.encode(num))), num)
+
+        num = np.float64(256.2013)
+        self.assertEqual(np.float64(ujson.decode(ujson.encode(num))), num)
+
+    def testFloatArray(self):
+        arr = np.arange(12.5, 185.72, 1.7322, dtype=np.float)
+        dtypes = (np.float, np.float32, np.float64)
+
+        for dtype in dtypes:
+            inpt = arr.astype(dtype)
+            outp = np.array(ujson.decode(ujson.encode(inpt)), dtype=dtype)
+            # TODO can the precision be improved on this?
+            assert_array_almost_equal_nulp(inpt, outp, nulp=3)
+
+        inpt = np.arange(1.5, 21.5, 0.2, dtype=np.float16)
+        outp = np.array(ujson.decode(ujson.encode(inpt)), dtype=np.float16)
+        assert_array_almost_equal_nulp(inpt, outp)
+
+    def testFloatMax(self):
+       # TODO better handling of very large floats
+       num = np.float(np.finfo(np.float).max/10)
+       assert_approx_equal(np.float(ujson.decode(ujson.encode(num))), num)
+
+       num = np.float16(np.finfo(np.float16).max/10)
+       assert_approx_equal(np.float16(ujson.decode(ujson.encode(num))), num)
+
+       num = np.float32(np.finfo(np.float32).max/10)
+       assert_approx_equal(np.float32(ujson.decode(ujson.encode(num))), num)
+
+       num = np.float64(np.finfo(np.float64).max/10)
+       assert_approx_equal(np.float64(ujson.decode(ujson.encode(num))), num)
+
 
 """
 def test_decodeNumericIntFrcOverflow(self):

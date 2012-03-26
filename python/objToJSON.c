@@ -1,4 +1,6 @@
 #include <Python.h>
+#include <numpy/arrayobject.h>
+#include <numpy/halffloat.h>
 #include <stdio.h>
 #include <datetime.h>
 #include <ultrajson.h>
@@ -80,6 +82,8 @@ void initObjToJSON()
 
 	Py_INCREF(mod_calendar);
 
+    /* Initialise numpy API */
+    import_array();
 }
 
 static void *PyIntToINT32(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
@@ -100,6 +104,22 @@ static void *PyLongToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size
 {
 	PyObject *obj = (PyObject *) _obj;
 	*((JSINT64 *) outValue) = GET_TC(tc)->longValue;
+	return NULL;
+}
+
+static void *NpyHalfToDOUBLE(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
+{
+	PyObject *obj = (PyObject *) _obj;
+	unsigned long ctype;
+	PyArray_ScalarAsCtype(obj, &ctype);
+	*((double *) outValue) = npy_half_to_double (ctype);
+	return NULL;
+}
+
+static void *NpyFloatToDOUBLE(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
+{
+	PyObject *obj = (PyObject *) _obj;
+	PyArray_CastScalarToCtype(obj, outValue, PyArray_DescrFromType(NPY_DOUBLE));
 	return NULL;
 }
 
@@ -163,6 +183,46 @@ static void *PyDateToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size
 	*( (JSINT64 *) outValue) = PyLong_AsLongLong (unixTimestamp);
 	Py_DECREF(timetuple);
 	Py_DECREF(unixTimestamp);
+	return NULL;
+}
+
+//=============================================================================
+// Numpy array iteration functions 
+//=============================================================================
+void NpyArr_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+{
+	GET_TC(tc)->index = 0;
+	GET_TC(tc)->size = PyArray_Size( (PyArrayObject *) obj);
+	GET_TC(tc)->itemValue = NULL;
+}
+
+int NpyArr_iterNext(JSOBJ obj, JSONTypeContext *tc)
+{
+	PyObject *item;
+
+	if (GET_TC(tc)->index >= GET_TC(tc)->size)
+	{
+		return 0;
+	}
+
+	item = PyArray_GETITEM (obj, PyArray_GETPTR1(obj, GET_TC(tc)->index));
+
+	GET_TC(tc)->itemValue = item;
+	GET_TC(tc)->index ++;
+	return 1;
+}
+
+void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+}
+
+JSOBJ NpyArr_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+{
+	return GET_TC(tc)->itemValue;
+}
+
+char *NpyArr_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+{
 	return NULL;
 }
 
@@ -437,7 +497,7 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	tc->prv[13] = 0;
 	tc->prv[14] = 0;
 	
-	if (PyIter_Check(obj))
+	if (PyIter_Check(obj) || PyArray_Check(obj))
 	{
 		goto ISITERABLE;
 	}
@@ -480,6 +540,27 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 
 		return;
 	}
+	else 
+	if (PyArray_IsScalar(obj, Integer))
+	{
+		PyObject *exc;
+
+		PRINTMARK();
+		pc->PyTypeToJSON = PyLongToINT64; 
+		tc->type = JT_LONG;
+		PyArray_CastScalarToCtype(obj, &(GET_TC(tc)->longValue), PyArray_DescrFromType(NPY_LONG));
+
+		exc = PyErr_Occurred();
+
+		if (exc && PyErr_ExceptionMatches(PyExc_OverflowError))
+		{
+			PRINTMARK();
+			tc->type = JT_INVALID;
+			return;
+		}
+
+		return;
+	}
 	else
 	if (PyString_Check(obj))
 	{
@@ -499,6 +580,20 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	{
 		PRINTMARK();
 		pc->PyTypeToJSON = PyFloatToDOUBLE; tc->type = JT_DOUBLE;
+		return;
+	}
+	else
+	if (PyArray_IsScalar(obj, Float))
+	{
+		PRINTMARK();
+		pc->PyTypeToJSON = NpyFloatToDOUBLE; tc->type = JT_DOUBLE;
+		return;
+	}
+	else
+	if (PyArray_IsScalar(obj, Half))
+	{
+		PRINTMARK();
+		pc->PyTypeToJSON = NpyHalfToDOUBLE; tc->type = JT_DOUBLE;
 		return;
 	}
 	else 
@@ -562,6 +657,18 @@ ISITERABLE:
 		pc->iterNext = Tuple_iterNext;
 		pc->iterGetValue = Tuple_iterGetValue;
 		pc->iterGetName = Tuple_iterGetName;
+		return;
+	}
+	else
+	if (PyArray_Check(obj))
+	{
+		PRINTMARK();
+		tc->type = JT_ARRAY;
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyArr_iterNext;
+		pc->iterGetValue = NpyArr_iterGetValue;
+		pc->iterGetName = NpyArr_iterGetName;
 		return;
 	}
 
@@ -720,7 +827,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		return NULL;
 	}
 
-	
+
 	if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
 	{
 		encoder.forceASCII = 0;
