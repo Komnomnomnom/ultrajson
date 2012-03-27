@@ -15,6 +15,19 @@ typedef void *(*PFN_PyTypeToJSON)(JSOBJ obj, JSONTypeContext *ti, void *outValue
 typedef ssize_t Py_ssize_t;
 #endif
 
+typedef struct __NpyIterContext
+{
+	PyObject *array;
+	NpyIter *iter;
+	NpyIter_GetMultiIndexFunc *indexfunc;
+	NpyIter_IterNextFunc *iternext;
+	char **dataptr;
+	npy_intp ndim;
+	npy_intp index[NPY_MAXDIMS];
+	npy_intp level;
+	npy_intp closelevel;
+
+} NpyIterContext;
 
 typedef struct __TypeContext
 {
@@ -33,6 +46,8 @@ typedef struct __TypeContext
 	PyObject *attrList;
 
 	JSINT64 longValue;
+
+	NpyIterContext *npyiter;
 
 } TypeContext;
 
@@ -67,7 +82,7 @@ struct PyDictIterState
 
 
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
-#define PRINTMARK() 		
+#define PRINTMARK()
 
 void initObjToJSON()
 {
@@ -82,8 +97,8 @@ void initObjToJSON()
 
 	Py_INCREF(mod_calendar);
 
-    /* Initialise numpy API */
-    import_array();
+	/* Initialise numpy API */
+	import_array();
 }
 
 static void *PyIntToINT32(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
@@ -191,39 +206,108 @@ static void *PyDateToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size
 //=============================================================================
 void NpyArr_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
-	GET_TC(tc)->index = 0;
-	GET_TC(tc)->size = PyArray_Size( (PyArrayObject *) obj);
-	GET_TC(tc)->itemValue = NULL;
-}
-
-int NpyArr_iterNext(JSOBJ obj, JSONTypeContext *tc)
-{
-	PyObject *item;
-
-	if (GET_TC(tc)->index >= GET_TC(tc)->size)
-	{
-		return 0;
+	if(PyArray_SIZE(obj) > 0) {
+		NpyIterContext *npyiter = malloc(sizeof(NpyIterContext));
+		
+		if(!npyiter) {
+			PyErr_NoMemory();
+			return;
+		}
+		GET_TC(tc)->npyiter = npyiter;
+		npyiter->array = obj;
+		npyiter->iter = NpyIter_New(
+				(PyArrayObject *) obj, 
+				NPY_ITER_READONLY | NPY_ITER_REFS_OK | NPY_ITER_MULTI_INDEX,
+				NPY_CORDER,
+				NPY_NO_CASTING,
+				NULL); 
+		if(!npyiter) {
+			return;
+		}
+		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
+		npyiter->dataptr = NpyIter_GetDataPtrArray(npyiter->iter);
+		npyiter->iternext = NpyIter_GetIterNext(npyiter->iter, NULL);
+		npyiter->ndim = PyArray_NDIM(obj);
+		npyiter->level = 1;
+		npyiter->closelevel = 0;
 	}
-
-	item = PyArray_GETITEM (obj, PyArray_GETPTR1(obj, GET_TC(tc)->index));
-
-	GET_TC(tc)->itemValue = item;
-	GET_TC(tc)->index ++;
-	return 1;
+	PRINTMARK();
 }
 
 void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
+	if(GET_TC(tc)->npyiter) { 
+		NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
+		free(GET_TC(tc)->npyiter);
+	}
+	PRINTMARK();
 }
 
-JSOBJ NpyArr_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+void NpyIter_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
+	PRINTMARK();
+}
+
+int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
+{
+	NpyIterContext *npyiter;
+	if(PyCapsule_CheckExact(_obj)) {
+		npyiter = PyCapsule_GetPointer(_obj, "ujsonNpyIterCtxt");
+	} else {
+		npyiter = GET_TC(tc)->npyiter;
+	}
+
+	if(!npyiter || !npyiter->iternext) {
+		PRINTMARK();
+		return 0;
+	}
+
+	if(npyiter->closelevel) {
+		npyiter->closelevel--;
+		npyiter->level--;
+		PRINTMARK();
+		return 0;
+	}
+
+	if(npyiter->level < npyiter->ndim) {
+		npyiter->level++;
+		GET_TC(tc)->itemValue = PyCapsule_New(npyiter, "ujsonNpyIterCtxt", NULL);
+		PRINTMARK();
+		return 1;
+	}
+
+	GET_TC(tc)->itemValue = PyArray_GETITEM(npyiter->array, *npyiter->dataptr);
+
+	if(!npyiter->iternext(npyiter->iter)) {
+		npyiter->iternext = NULL;
+	} else {
+		npyiter->indexfunc(npyiter->iter, npyiter->index);
+		int i;
+		for(i = npyiter->ndim-1; npyiter->index[i] == 0; i--) {
+			npyiter->closelevel++;
+		}
+	}
+
+	PRINTMARK();
+	return 1;
+}
+
+JSOBJ NpyIter_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+{
+	PRINTMARK();
 	return GET_TC(tc)->itemValue;
 }
 
-char *NpyArr_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+char *NpyIter_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 {
+	PRINTMARK();
 	return NULL;
+}
+
+void NpyIter_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+	Py_CLEAR(obj);
+	PRINTMARK();
 }
 
 //=============================================================================
@@ -501,6 +585,16 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	{
 		goto ISITERABLE;
 	}
+	else 
+	if (PyCapsule_IsValid(obj, "ujsonNpyIterCtxt")) {
+		tc->type = JT_ARRAY;
+		pc->iterBegin = NpyIter_iterBegin;
+		pc->iterEnd = NpyIter_iterEnd;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
+		return;
+	}
 
 	if (PyBool_Check(obj))
 	{
@@ -666,9 +760,9 @@ ISITERABLE:
 		tc->type = JT_ARRAY;
 		pc->iterBegin = NpyArr_iterBegin;
 		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyArr_iterNext;
-		pc->iterGetValue = NpyArr_iterGetValue;
-		pc->iterGetName = NpyArr_iterGetName;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
 		return;
 	}
 
@@ -797,7 +891,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	PyObject *oensureAscii = NULL;
 	int idoublePrecision = 5; // default double precision setting
 
-  JSONObjectEncoder encoder = 
+	JSONObjectEncoder encoder = 
 	{
 		Object_beginTypeContext,	//void (*beginTypeContext)(JSOBJ obj, JSONTypeContext *tc);
 		Object_endTypeContext, //void (*endTypeContext)(JSOBJ obj, JSONTypeContext *tc);
@@ -833,7 +927,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		encoder.forceASCII = 0;
 	}
 
-  encoder.doublePrecision = idoublePrecision;
+	encoder.doublePrecision = idoublePrecision;
 
 	PRINTMARK();
 	ret = JSON_EncodeObject (oinput, &encoder, buffer, sizeof (buffer));

@@ -147,7 +147,7 @@ class UltraJSONTests(TestCase):
 
         dec = ujson.decode(enc)
                 
-        self.assertEquals(enc, json.dumps(input, encoding="utf-8"))				
+        self.assertEquals(enc, json.dumps(input, encoding="utf-8"))
         self.assertEquals(dec, json.loads(enc))
 
         
@@ -267,7 +267,7 @@ class UltraJSONTests(TestCase):
 
         class O2:
             member = 0
-            pass	
+            pass
 
         class O1:
             member = 0
@@ -781,18 +781,44 @@ class NumpyJSONTests(TestCase):
         assert_array_almost_equal_nulp(inpt, outp)
 
     def testFloatMax(self):
-       # TODO better handling of very large floats
-       num = np.float(np.finfo(np.float).max/10)
-       assert_approx_equal(np.float(ujson.decode(ujson.encode(num))), num)
+        # TODO better handling of very large floats
+        num = np.float(np.finfo(np.float).max/10)
+        assert_approx_equal(np.float(ujson.decode(ujson.encode(num))), num)
 
-       num = np.float16(np.finfo(np.float16).max/10)
-       assert_approx_equal(np.float16(ujson.decode(ujson.encode(num))), num)
+        num = np.float16(np.finfo(np.float16).max/10)
+        assert_approx_equal(np.float16(ujson.decode(ujson.encode(num))), num)
 
-       num = np.float32(np.finfo(np.float32).max/10)
-       assert_approx_equal(np.float32(ujson.decode(ujson.encode(num))), num)
+        num = np.float32(np.finfo(np.float32).max/10)
+        assert_approx_equal(np.float32(ujson.decode(ujson.encode(num))), num)
 
-       num = np.float64(np.finfo(np.float64).max/10)
-       assert_approx_equal(np.float64(ujson.decode(ujson.encode(num))), num)
+        num = np.float64(np.finfo(np.float64).max/10)
+        assert_approx_equal(np.float64(ujson.decode(ujson.encode(num))), num)
+
+    def testArrays(self):
+        arr = np.arange(100);
+
+        arr = arr.reshape((10, 10))
+        assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+
+        arr = arr.reshape((5, 5, 4))
+        assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+
+        arr = arr.reshape((100, 1))
+        assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+
+        arr = np.arange(96);
+        arr = arr.reshape((2, 2, 2, 2, 3, 2))
+        assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+
+        l = [list(), dict(), dict(), list(), 
+             42, 97.8, ['a', 'b'], {'key': 'val'}]
+        arr = np.array(l)
+        assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+
+        arr = np.arange(100.202, 200.202, 1, dtype=np.float32);
+        arr = arr.reshape((5, 5, 4))
+        outp = np.array(ujson.decode(ujson.encode(arr)), dtype=np.float32)
+        assert_array_almost_equal_nulp(arr, outp)
 
 
 """
