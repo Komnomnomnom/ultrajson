@@ -17,6 +17,7 @@ import re
 import numpy as np
 from numpy.testing import (assert_array_equal, assert_array_almost_equal_nulp,
                            assert_approx_equal)
+from pandas import DataFrame, Series, Index
 
 
 class UltraJSONTests(TestCase):
@@ -819,6 +820,24 @@ class NumpyJSONTests(TestCase):
         arr = arr.reshape((5, 5, 4))
         outp = np.array(ujson.decode(ujson.encode(arr)), dtype=np.float32)
         assert_array_almost_equal_nulp(arr, outp)
+
+
+class PandasJSONTests(TestCase):
+
+    def testDataFrame(self):
+        df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
+        outp = DataFrame(**ujson.decode(ujson.encode(df)))
+        self.assertTrue((df == outp).values.all())
+
+    def testSeries(self):
+        s = Series([1, 2, 3, 4, 5, 6])
+        outp = Series(ujson.decode(ujson.encode(s)))
+        self.assertTrue((s == outp).all())
+
+    def testIndex(self):
+        s = Index([1, 2, 3, 4, 5, 6])
+        outp = Index(ujson.decode(ujson.encode(s)))
+        self.assertTrue((s == outp).all())
 
 
 """
