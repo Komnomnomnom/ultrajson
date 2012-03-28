@@ -7,6 +7,9 @@
 
 static PyObject* meth_timegm;
 static PyObject* mod_calendar;
+static PyObject* cls_dataframe;
+static PyObject* cls_series;
+static PyObject* cls_index;
 
 typedef void *(*PFN_PyTypeToJSON)(JSOBJ obj, JSONTypeContext *ti, void *outValue, size_t *_outLen);
 
@@ -44,6 +47,7 @@ typedef struct __TypeContext
 	PyObject *itemValue;
 	PyObject *itemName;
 	PyObject *attrList;
+	char *citemName;
 
 	JSINT64 longValue;
 
@@ -96,6 +100,12 @@ void initObjToJSON()
 	mod_calendar = PyImport_ImportModule("calendar");
 
 	Py_INCREF(mod_calendar);
+
+	PyObject *mod_frame = PyImport_ImportModule("pandas.core.frame");
+	cls_dataframe = PyObject_GetAttrString(mod_frame, "DataFrame");
+	cls_index = PyObject_GetAttrString(mod_frame, "Index");
+	cls_series = PyObject_GetAttrString(mod_frame, "Series");
+	Py_DECREF(mod_frame);
 
 	/* Initialise numpy API */
 	import_array();
@@ -204,12 +214,24 @@ static void *PyDateToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size
 //=============================================================================
 // Numpy array iteration functions 
 //=============================================================================
-void NpyArr_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 {
-	if(PyArray_SIZE(obj) > 0) {
+	PyArrayObject *obj;
+	if (GET_TC(tc)->newObj)
+	{
+		obj = (PyArrayObject *) GET_TC(tc)->newObj;
+	}
+	else
+	{
+		obj = (PyArrayObject *) _obj;
+	}
+
+	if (PyArray_SIZE(obj) > 0)
+	{
 		NpyIterContext *npyiter = malloc(sizeof(NpyIterContext));
 		
-		if(!npyiter) {
+		if (!npyiter)
+		{
 			PyErr_NoMemory();
 			return;
 		}
@@ -221,7 +243,8 @@ void NpyArr_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 				NPY_CORDER,
 				NPY_NO_CASTING,
 				NULL); 
-		if(!npyiter) {
+		if (!npyiter)
+		{
 			return;
 		}
 		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
@@ -236,10 +259,12 @@ void NpyArr_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 
 void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
-	if(GET_TC(tc)->npyiter) { 
+	if (GET_TC(tc)->npyiter)
+	{ 
 		NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
 		free(GET_TC(tc)->npyiter);
 	}
+	Py_XDECREF(GET_TC(tc)->newObj);
 	PRINTMARK();
 }
 
@@ -251,25 +276,31 @@ void NpyIter_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 {
 	NpyIterContext *npyiter;
-	if(PyCapsule_CheckExact(_obj)) {
+	if (PyCapsule_CheckExact(_obj))
+	{
 		npyiter = PyCapsule_GetPointer(_obj, "ujsonNpyIterCtxt");
-	} else {
+	}
+	else
+	{
 		npyiter = GET_TC(tc)->npyiter;
 	}
 
-	if(!npyiter || !npyiter->iternext) {
+	if (!npyiter || !npyiter->iternext)
+	{
 		PRINTMARK();
 		return 0;
 	}
 
-	if(npyiter->closelevel) {
+	if (npyiter->closelevel)
+	{
 		npyiter->closelevel--;
 		npyiter->level--;
 		PRINTMARK();
 		return 0;
 	}
 
-	if(npyiter->level < npyiter->ndim) {
+	if (npyiter->level < npyiter->ndim)
+	{
 		npyiter->level++;
 		GET_TC(tc)->itemValue = PyCapsule_New(npyiter, "ujsonNpyIterCtxt", NULL);
 		PRINTMARK();
@@ -278,12 +309,16 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 
 	GET_TC(tc)->itemValue = PyArray_GETITEM(npyiter->array, *npyiter->dataptr);
 
-	if(!npyiter->iternext(npyiter->iter)) {
+	if (!npyiter->iternext(npyiter->iter))
+	{
 		npyiter->iternext = NULL;
-	} else {
+	}
+	else
+	{
 		npyiter->indexfunc(npyiter->iter, npyiter->index);
 		int i;
-		for(i = npyiter->ndim-1; npyiter->index[i] == 0; i--) {
+		for (i = npyiter->ndim-1; npyiter->index[i] == 0; i--)
+		{
 			npyiter->closelevel++;
 		}
 	}
@@ -491,6 +526,77 @@ char *List_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 }
 
 //=============================================================================
+// pandas DataFrame iteration functions 
+//=============================================================================
+void DataFrame_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+{
+	GET_TC(tc)->index = 0;
+	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	if (!GET_TC(tc)->citemName)
+	{
+		PyErr_NoMemory();
+	}
+	PRINTMARK();
+}
+
+int DataFrame_iterNext(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (!GET_TC(tc)->citemName)
+	{
+		return 0;
+	}
+
+	Py_ssize_t index = GET_TC(tc)->index;
+	Py_XDECREF(GET_TC(tc)->itemValue);
+	if (index == 0)
+	{
+		memcpy(GET_TC(tc)->citemName, "columns", 8);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "columns");
+	}
+	else
+	if (index == 1)
+	{
+		memcpy(GET_TC(tc)->citemName, "index", 6);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
+	}
+	else
+	if (index == 2)
+	{
+		memcpy(GET_TC(tc)->citemName, "data", 5);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
+	}
+	else 
+	{
+		PRINTMARK();
+		return 0;
+	}
+
+	GET_TC(tc)->index++;
+	PRINTMARK();
+	return 1;
+}
+
+void DataFrame_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (GET_TC(tc)->citemName)
+	{
+		free(GET_TC(tc)->citemName);
+	}
+	PRINTMARK();
+}
+
+JSOBJ DataFrame_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+{
+	return GET_TC(tc)->itemValue;
+}
+
+char *DataFrame_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+{
+	*outLen = strlen(GET_TC(tc)->citemName);
+	return GET_TC(tc)->citemName;
+}       
+
+//=============================================================================
 // Dict iteration functions 
 // itemName might converted to string (Python_Str). Do refCounting
 // itemValue is borrowed from object (which is dict). No refCounting
@@ -586,7 +692,8 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 		goto ISITERABLE;
 	}
 	else 
-	if (PyCapsule_IsValid(obj, "ujsonNpyIterCtxt")) {
+	if (PyCapsule_IsValid(obj, "ujsonNpyIterCtxt"))
+	{
 		tc->type = JT_ARRAY;
 		pc->iterBegin = NpyIter_iterBegin;
 		pc->iterEnd = NpyIter_iterEnd;
@@ -802,6 +909,29 @@ ISITERABLE:
 	}
 
 	PyErr_Clear();
+
+	if (PyObject_TypeCheck(obj, cls_dataframe))
+	{
+		tc->type = JT_OBJECT;
+		pc->iterBegin = DataFrame_iterBegin;
+		pc->iterEnd = DataFrame_iterEnd;
+		pc->iterNext = DataFrame_iterNext;
+		pc->iterGetValue = DataFrame_iterGetValue;
+		pc->iterGetName = DataFrame_iterGetName;
+		return;
+	}
+	else
+	if (PyObject_TypeCheck(obj, cls_index) || PyObject_TypeCheck(obj, cls_series))
+	{
+		tc->type = JT_ARRAY;
+		pc->newObj = PyObject_GetAttrString(obj, "values");
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
+		return;
+	}
 
 	tc->type = JT_OBJECT;
 	pc->iterBegin = Dir_iterBegin;
