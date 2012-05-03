@@ -608,6 +608,142 @@ char *List_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 }
 
 //=============================================================================
+// pandas Index iteration functions 
+//=============================================================================
+void Index_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+{
+	GET_TC(tc)->index = 0;
+	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	if (!GET_TC(tc)->citemName)
+	{
+		PyErr_NoMemory();
+	}
+	PRINTMARK();
+}
+
+int Index_iterNext(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (!GET_TC(tc)->citemName)
+	{
+		return 0;
+	}
+
+	Py_ssize_t index = GET_TC(tc)->index;
+	Py_XDECREF(GET_TC(tc)->itemValue);
+	if (index == 0)
+	{
+		memcpy(GET_TC(tc)->citemName, "name", 5);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "name");
+	}
+	else
+	if (index == 1)
+	{
+		memcpy(GET_TC(tc)->citemName, "data", 5);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
+	}
+	else 
+	{
+		PRINTMARK();
+		return 0;
+	}
+
+	GET_TC(tc)->index++;
+	PRINTMARK();
+	return 1;
+}
+
+void Index_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (GET_TC(tc)->citemName)
+	{
+		free(GET_TC(tc)->citemName);
+	}
+	PRINTMARK();
+}
+
+JSOBJ Index_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+{
+	return GET_TC(tc)->itemValue;
+}
+
+char *Index_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+{
+	*outLen = strlen(GET_TC(tc)->citemName);
+	return GET_TC(tc)->citemName;
+}       
+
+//=============================================================================
+// pandas Series iteration functions 
+//=============================================================================
+void Series_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+{
+	GET_TC(tc)->index = 0;
+	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	if (!GET_TC(tc)->citemName)
+	{
+		PyErr_NoMemory();
+	}
+	PRINTMARK();
+}
+
+int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (!GET_TC(tc)->citemName)
+	{
+		return 0;
+	}
+
+	Py_ssize_t index = GET_TC(tc)->index;
+	Py_XDECREF(GET_TC(tc)->itemValue);
+	if (index == 0)
+	{
+		memcpy(GET_TC(tc)->citemName, "name", 5);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "name");
+	}
+	else
+	if (index == 1)
+	{
+		memcpy(GET_TC(tc)->citemName, "index", 6);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
+	}
+	else
+	if (index == 2)
+	{
+		memcpy(GET_TC(tc)->citemName, "data", 5);
+		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
+	}
+	else 
+	{
+		PRINTMARK();
+		return 0;
+	}
+
+	GET_TC(tc)->index++;
+	PRINTMARK();
+	return 1;
+}
+
+void Series_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+	if (GET_TC(tc)->citemName)
+	{
+		free(GET_TC(tc)->citemName);
+	}
+	PRINTMARK();
+}
+
+JSOBJ Series_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+{
+	return GET_TC(tc)->itemValue;
+}
+
+char *Series_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+{
+	*outLen = strlen(GET_TC(tc)->citemName);
+	return GET_TC(tc)->citemName;
+}       
+
+//=============================================================================
 // pandas DataFrame iteration functions 
 //=============================================================================
 void DataFrame_iterBegin(JSOBJ obj, JSONTypeContext *tc)
@@ -936,6 +1072,18 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_index))
 	{
+		if (enc->outputFormat == HEADERS) 
+		{
+			PRINTMARK();
+			tc->type = JT_OBJECT;
+			pc->iterBegin = Index_iterBegin;
+			pc->iterEnd = Index_iterEnd;
+			pc->iterNext = Index_iterNext;
+			pc->iterGetValue = Index_iterGetValue;
+			pc->iterGetName = Index_iterGetName;
+			return;
+		}
+
 		tc->type = JT_ARRAY;
 		pc->newObj = PyObject_GetAttrString(obj, "values");
 		pc->iterBegin = NpyArr_iterBegin;
@@ -948,6 +1096,19 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_series))
 	{
+		if (enc->outputFormat == HEADERS) 
+		{
+			PRINTMARK();
+			enc->outputFormat = RECORDS; // keep contained index data type simple
+			tc->type = JT_OBJECT;
+			pc->iterBegin = Series_iterBegin;
+			pc->iterEnd = Series_iterEnd;
+			pc->iterNext = Series_iterNext;
+			pc->iterGetValue = Series_iterGetValue;
+			pc->iterGetName = Series_iterGetName;
+			return;
+		}
+
 		if (enc->outputFormat == INDEXED || enc->outputFormat == COLUMN_INDEXED)
 		{
 			PRINTMARK();
@@ -985,55 +1146,45 @@ ISITERABLE:
 		if (enc->outputFormat == HEADERS) 
 		{
 			PRINTMARK();
+			enc->outputFormat = RECORDS; // keep contained index data type simple
 			tc->type = JT_OBJECT;
 			pc->iterBegin = DataFrame_iterBegin;
 			pc->iterEnd = DataFrame_iterEnd;
 			pc->iterNext = DataFrame_iterNext;
 			pc->iterGetValue = DataFrame_iterGetValue;
 			pc->iterGetName = DataFrame_iterGetName;
+			return;
 		}
-		else 
+
 		if (enc->outputFormat == RECORDS)
 		{
 			PRINTMARK();
 			tc->type = JT_ARRAY;
-			pc->newObj = PyObject_GetAttrString(obj, "values");
 			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
-			pc->iterBegin = NpyArr_iterBegin;
-			pc->iterEnd = NpyArr_iterEnd;
-			pc->iterNext = NpyIter_iterNext;
-			pc->iterGetValue = NpyIter_iterGetValue;
-			pc->iterGetName = NpyIter_iterGetName;
 		}
 		else 
 		if (enc->outputFormat == INDEXED)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
-			pc->newObj = PyObject_GetAttrString(obj, "values");
 			pc->rowLabels = PyObject_GetAttrString(obj, "index");
 			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
-			pc->iterBegin = NpyArr_iterBegin;
-			pc->iterEnd = NpyArr_iterEnd;
-			pc->iterNext = NpyIter_iterNext;
-			pc->iterGetValue = NpyIter_iterGetValue;
-			pc->iterGetName = NpyIter_iterGetName;
 		}
 		else 
 		if (enc->outputFormat == COLUMN_INDEXED)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
-			pc->newObj = PyObject_GetAttrString(obj, "values");
 			pc->rowLabels = PyObject_GetAttrString(obj, "columns");
 			pc->columnLabels = PyObject_GetAttrString(obj, "index");
 			pc->npyiterOrder = NPY_FORTRANORDER;
-			pc->iterBegin = NpyArr_iterBegin;
-			pc->iterEnd = NpyArr_iterEnd;
-			pc->iterNext = NpyIter_iterNext;
-			pc->iterGetValue = NpyIter_iterGetValue;
-			pc->iterGetName = NpyIter_iterGetName;
 		}
+		pc->newObj = PyObject_GetAttrString(obj, "values");
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
 		return;
 	}
 
