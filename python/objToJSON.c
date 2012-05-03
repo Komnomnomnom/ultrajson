@@ -330,9 +330,13 @@ void NpyIter_encodeLabel(JSONTypeContext* tc, NpyIterContext* npyiter, PyObject*
 	PyObject* labelObj = PyArray_GETITEM(labels, labelItem);
 	JSONObjectEncoder* labelEncoder = ((PyObjectEncoder*)tc->encoder)->labelEncoder;
 
-	// encode the label, ensuring that we trim off the quotes surrounding the result
-	GET_TC(tc)->citemName = JSON_EncodeObject(labelObj, labelEncoder, labelEncoder->start, labelEncoder->end - labelEncoder->start) + 1;
-	*(labelEncoder->offset-2) = '\0';
+	GET_TC(tc)->citemName = JSON_EncodeObject(labelObj, labelEncoder, labelEncoder->start, labelEncoder->end - labelEncoder->start);
+	// trim off any quotes surrounding the result
+	if (GET_TC(tc)->citemName[0] == '\"')
+	{    
+		GET_TC(tc)->citemName++;
+		*(labelEncoder->offset-2) = '\0';
+	}
 }
 
 int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
