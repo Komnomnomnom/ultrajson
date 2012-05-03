@@ -605,6 +605,7 @@ Perhaps implement recursion detection */
 void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
 {
 	JSONTypeContext tc;
+	tc.encoder = enc;
 	size_t szlen;
 
 	if (enc->level > enc->recursionMax)

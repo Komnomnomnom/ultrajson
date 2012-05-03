@@ -30,6 +30,8 @@ typedef struct __NpyIterContext
 	npy_intp level;
 	npy_intp closelevel;
 
+	PyObject* columnLabels;
+	PyObject* rowLabels;
 } NpyIterContext;
 
 typedef struct __TypeContext
@@ -51,9 +53,23 @@ typedef struct __TypeContext
 
 	JSINT64 longValue;
 
+	PyObject* rowLabels;
+	PyObject* columnLabels;
 	NpyIterContext *npyiter;
 
 } TypeContext;
+
+typedef struct __PyObjectEncoder
+{
+	JSONObjectEncoder enc;
+
+	// need a separate encoder for labels as USJON always assumes they are strings
+	// and using the current encoder would mess up the buffer
+	JSONObjectEncoder* labelEncoder;
+
+	// output format style for pandas data types
+	int outputFormat;
+} PyObjectEncoder;
 
 #define GET_TC(__ptrtc) ((TypeContext *)((__ptrtc)->prv))
 
@@ -84,6 +100,12 @@ struct PyDictIterState
 	size_t sz;
 };
 
+enum PANDAS_FORMAT
+{
+	HEADERS,
+	RECORDS,
+	INDEXED
+};
 
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
 #define PRINTMARK()
@@ -247,6 +269,8 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 		{
 			return;
 		}
+		npyiter->columnLabels = GET_TC(tc)->columnLabels;
+		npyiter->rowLabels = GET_TC(tc)->rowLabels;
 		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
 		npyiter->dataptr = NpyIter_GetDataPtrArray(npyiter->iter);
 		npyiter->iternext = NpyIter_GetIterNext(npyiter->iter, NULL);
@@ -271,6 +295,20 @@ void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 void NpyIter_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	PRINTMARK();
+}
+
+void NpyIter_encodeLabel(JSONTypeContext* tc, NpyIterContext* npyiter, PyObject* labels, npy_intp dim)
+{
+	PRINTMARK();
+	// get the label object from the label array
+	npyiter->indexfunc(npyiter->iter, npyiter->index);
+	void* labelItem = PyArray_GETPTR1(labels, npyiter->index[dim]);
+	PyObject* labelObj = PyArray_GETITEM(labels, labelItem);
+	JSONObjectEncoder* labelEncoder = ((PyObjectEncoder*)tc->encoder)->labelEncoder;
+
+	// encode the label, ensuring that we trim off the quotes surrounding the result
+	GET_TC(tc)->citemName = JSON_EncodeObject(labelObj, labelEncoder, labelEncoder->start, labelEncoder->end - labelEncoder->start) + 1;
+	*(labelEncoder->offset-2) = '\0';
 }
 
 int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
@@ -301,6 +339,10 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 
 	if (npyiter->level < npyiter->ndim)
 	{
+		if (npyiter->rowLabels) 
+		{
+			NpyIter_encodeLabel(tc, npyiter, npyiter->rowLabels, 0);
+		}
 		npyiter->level++;
 		GET_TC(tc)->itemValue = PyCapsule_New(npyiter, "ujsonNpyIterCtxt", NULL);
 		PRINTMARK();
@@ -308,6 +350,10 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 	}
 
 	GET_TC(tc)->itemValue = PyArray_GETITEM(npyiter->array, *npyiter->dataptr);
+	if (npyiter->columnLabels) 
+	{
+		NpyIter_encodeLabel(tc, npyiter, npyiter->columnLabels, npyiter->ndim-1);
+	}
 
 	if (!npyiter->iternext(npyiter->iter))
 	{
@@ -336,7 +382,8 @@ JSOBJ NpyIter_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
 char *NpyIter_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 {
 	PRINTMARK();
-	return NULL;
+	*outLen = strlen(GET_TC(tc)->citemName);
+	return GET_TC(tc)->citemName;
 }
 
 void NpyIter_iterEnd(JSOBJ obj, JSONTypeContext *tc)
@@ -665,28 +712,18 @@ char *Dict_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 	return PyString_AS_STRING(GET_TC(tc)->itemName);
 }
 
-
 void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 {
 	TypeContext *pc = (TypeContext *) tc->prv;
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	PyObject *toDictFunc;
 
-	tc->prv[0] = 0;
-	tc->prv[1] = 0;
-	tc->prv[2] = 0;
-	tc->prv[3] = 0;
-	tc->prv[4] = 0;
-	tc->prv[5] = 0;
-	tc->prv[6] = 0;
-	tc->prv[7] = 0;
-	tc->prv[8] = 0;
-	tc->prv[9] = 0;
-	tc->prv[10] = 0;
-	tc->prv[11] = 0;
-	tc->prv[12] = 0;
-	tc->prv[13] = 0;
-	tc->prv[14] = 0;
-	
+	int i;
+	for (i = 0; i < 32; i++) 
+	{
+		tc->prv[i] = 0;
+	}
+
 	if (PyIter_Check(obj) || PyArray_Check(obj))
 	{
 		goto ISITERABLE;
@@ -694,7 +731,8 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	else 
 	if (PyCapsule_IsValid(obj, "ujsonNpyIterCtxt"))
 	{
-		tc->type = JT_ARRAY;
+		NpyIterContext *npyiter = PyCapsule_GetPointer(obj, "ujsonNpyIterCtxt");
+		tc->type = (npyiter->columnLabels ? JT_OBJECT : JT_ARRAY);
 		pc->iterBegin = NpyIter_iterBegin;
 		pc->iterEnd = NpyIter_iterEnd;
 		pc->iterNext = NpyIter_iterNext;
@@ -861,6 +899,40 @@ ISITERABLE:
 		return;
 	}
 	else
+	if (PyObject_TypeCheck(obj, cls_index))
+	{
+		tc->type = JT_ARRAY;
+		pc->newObj = PyObject_GetAttrString(obj, "values");
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
+		return;
+	}
+	else
+	if (PyObject_TypeCheck(obj, cls_series))
+	{
+		if (enc->outputFormat == INDEXED)
+		{
+			PRINTMARK();
+			tc->type = JT_OBJECT;
+			pc->columnLabels = PyObject_GetAttrString(obj, "index");
+		}
+		else
+		{
+			PRINTMARK();
+			tc->type = JT_ARRAY;
+		}
+		pc->newObj = PyObject_GetAttrString(obj, "values");
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyIter_iterNext;
+		pc->iterGetValue = NpyIter_iterGetValue;
+		pc->iterGetName = NpyIter_iterGetName;
+		return;
+	}
+	else
 	if (PyArray_Check(obj))
 	{
 		PRINTMARK();
@@ -870,6 +942,48 @@ ISITERABLE:
 		pc->iterNext = NpyIter_iterNext;
 		pc->iterGetValue = NpyIter_iterGetValue;
 		pc->iterGetName = NpyIter_iterGetName;
+		return;
+	}
+	else
+	if (PyObject_TypeCheck(obj, cls_dataframe))
+	{
+		if (enc->outputFormat == HEADERS) 
+		{
+			PRINTMARK();
+			tc->type = JT_OBJECT;
+			pc->iterBegin = DataFrame_iterBegin;
+			pc->iterEnd = DataFrame_iterEnd;
+			pc->iterNext = DataFrame_iterNext;
+			pc->iterGetValue = DataFrame_iterGetValue;
+			pc->iterGetName = DataFrame_iterGetName;
+		}
+		else 
+		if (enc->outputFormat == RECORDS)
+		{
+			PRINTMARK();
+			tc->type = JT_ARRAY;
+			pc->newObj = PyObject_GetAttrString(obj, "values");
+			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
+			pc->iterBegin = NpyArr_iterBegin;
+			pc->iterEnd = NpyArr_iterEnd;
+			pc->iterNext = NpyIter_iterNext;
+			pc->iterGetValue = NpyIter_iterGetValue;
+			pc->iterGetName = NpyIter_iterGetName;
+		}
+		else 
+		if (enc->outputFormat == INDEXED)
+		{
+			PRINTMARK();
+			tc->type = JT_OBJECT;
+			pc->newObj = PyObject_GetAttrString(obj, "values");
+			pc->rowLabels = PyObject_GetAttrString(obj, "index");
+			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
+			pc->iterBegin = NpyArr_iterBegin;
+			pc->iterEnd = NpyArr_iterEnd;
+			pc->iterNext = NpyIter_iterNext;
+			pc->iterGetValue = NpyIter_iterGetValue;
+			pc->iterGetName = NpyIter_iterGetName;
+		}
 		return;
 	}
 
@@ -909,29 +1023,6 @@ ISITERABLE:
 	}
 
 	PyErr_Clear();
-
-	if (PyObject_TypeCheck(obj, cls_dataframe))
-	{
-		tc->type = JT_OBJECT;
-		pc->iterBegin = DataFrame_iterBegin;
-		pc->iterEnd = DataFrame_iterEnd;
-		pc->iterNext = DataFrame_iterNext;
-		pc->iterGetValue = DataFrame_iterGetValue;
-		pc->iterGetName = DataFrame_iterGetName;
-		return;
-	}
-	else
-	if (PyObject_TypeCheck(obj, cls_index) || PyObject_TypeCheck(obj, cls_series))
-	{
-		tc->type = JT_ARRAY;
-		pc->newObj = PyObject_GetAttrString(obj, "values");
-		pc->iterBegin = NpyArr_iterBegin;
-		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
-		return;
-	}
 
 	tc->type = JT_OBJECT;
 	pc->iterBegin = Dir_iterBegin;
@@ -1012,16 +1103,18 @@ char *Object_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 
 PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 {
-	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", NULL};
+	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "format", NULL};
 
 	char buffer[65536];
+	char labelBuffer[1024];
 	char *ret;
 	PyObject *newobj;
 	PyObject *oinput = NULL;
 	PyObject *oensureAscii = NULL;
+	char *sFormat = NULL;
 	int idoublePrecision = 5; // default double precision setting
 
-	JSONObjectEncoder encoder = 
+	PyObjectEncoder pyEncoder = 
 	{
 		Object_beginTypeContext,	//void (*beginTypeContext)(JSOBJ obj, JSONTypeContext *tc);
 		Object_endTypeContext, //void (*endTypeContext)(JSOBJ obj, JSONTypeContext *tc);
@@ -1041,26 +1134,54 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		-1, //recursionMax
 		idoublePrecision,
 		1, //forceAscii
-	};
 
+		NULL, //label encoder
+
+		HEADERS, // format
+	};
+	JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
+
+	PyObjectEncoder labelEncoder = pyEncoder;
+	JSONObjectEncoder* jsonLabelEncoder = (JSONObjectEncoder*) &labelEncoder;
+	jsonLabelEncoder->start = &labelBuffer;
+	jsonLabelEncoder->end = jsonLabelEncoder->start + sizeof(labelBuffer);
+	pyEncoder.labelEncoder = &labelEncoder;
 
 	PRINTMARK();
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|Oi", kwlist, &oinput, &oensureAscii, &idoublePrecision))
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|Ois", kwlist, &oinput, &oensureAscii, &idoublePrecision, &sFormat))
 	{
 		return NULL;
 	}
 
+	if (sFormat != NULL)
+	{
+		if (strcmp(sFormat, "records") == 0)
+		{
+			pyEncoder.outputFormat = RECORDS;
+		} 
+		else
+		if (strcmp(sFormat, "indexed") == 0)
+		{
+			pyEncoder.outputFormat = INDEXED;
+		}
+		else
+		if (strcmp(sFormat, "headers") != 0)
+		{
+			PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'format'", sFormat);
+			return NULL;
+		}
+	}
 
 	if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
 	{
-		encoder.forceASCII = 0;
+		encoder->forceASCII = 0;
 	}
 
-	encoder.doublePrecision = idoublePrecision;
+	encoder->doublePrecision = idoublePrecision;
 
 	PRINTMARK();
-	ret = JSON_EncodeObject (oinput, &encoder, buffer, sizeof (buffer));
+	ret = JSON_EncodeObject (oinput, encoder, buffer, sizeof (buffer));
 	PRINTMARK();
 
 	if (PyErr_Occurred())
@@ -1068,14 +1189,14 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		return NULL;
 	}
 
-	if (encoder.errorMsg)
+	if (encoder->errorMsg)
 	{
 		if (ret != buffer)
 		{
-			encoder.free (ret);
+			encoder->free (ret);
 		}
 
-		PyErr_Format (PyExc_OverflowError, "%s", encoder.errorMsg);
+		PyErr_Format (PyExc_OverflowError, "%s", encoder->errorMsg);
 		return NULL;
 	}
 
@@ -1083,7 +1204,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 
 	if (ret != buffer)
 	{
-		encoder.free (ret);
+		encoder->free (ret);
 	}
 
 	PRINTMARK();
