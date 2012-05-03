@@ -29,9 +29,12 @@ typedef struct __NpyIterContext
 	npy_intp index[NPY_MAXDIMS];
 	npy_intp level;
 	npy_intp closelevel;
+	NPY_ORDER order;
 
 	PyObject* columnLabels;
+	npy_intp columnLabelsDim;
 	PyObject* rowLabels;
+	npy_intp rowLabelsDim;
 } NpyIterContext;
 
 typedef struct __TypeContext
@@ -55,6 +58,7 @@ typedef struct __TypeContext
 
 	PyObject* rowLabels;
 	PyObject* columnLabels;
+	NPY_ORDER npyiterOrder;
 	NpyIterContext *npyiter;
 
 } TypeContext;
@@ -104,7 +108,8 @@ enum PANDAS_FORMAT
 {
 	HEADERS,
 	RECORDS,
-	INDEXED
+	INDEXED,
+	COLUMN_INDEXED
 };
 
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
@@ -257,26 +262,45 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 			PyErr_NoMemory();
 			return;
 		}
+
+		if (!GET_TC(tc)->npyiterOrder)
+		{
+			GET_TC(tc)->npyiterOrder = NPY_CORDER;
+		}
+
 		GET_TC(tc)->npyiter = npyiter;
+		npyiter->order = GET_TC(tc)->npyiterOrder;
 		npyiter->array = obj;
 		npyiter->iter = NpyIter_New(
 				(PyArrayObject *) obj, 
 				NPY_ITER_READONLY | NPY_ITER_REFS_OK | NPY_ITER_MULTI_INDEX,
-				NPY_CORDER,
+				npyiter->order,
 				NPY_NO_CASTING,
 				NULL); 
 		if (!npyiter)
 		{
 			return;
 		}
-		npyiter->columnLabels = GET_TC(tc)->columnLabels;
-		npyiter->rowLabels = GET_TC(tc)->rowLabels;
 		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
 		npyiter->dataptr = NpyIter_GetDataPtrArray(npyiter->iter);
 		npyiter->iternext = NpyIter_GetIterNext(npyiter->iter, NULL);
 		npyiter->ndim = PyArray_NDIM(obj);
 		npyiter->level = 1;
 		npyiter->closelevel = 0;
+
+		npyiter->columnLabels = GET_TC(tc)->columnLabels;
+		npyiter->rowLabels = GET_TC(tc)->rowLabels;
+		if (npyiter->order == NPY_CORDER) 
+		{
+			npyiter->rowLabelsDim = 0;
+			npyiter->columnLabelsDim = npyiter->ndim-1;
+		}
+		else
+		{
+			npyiter->rowLabelsDim = npyiter->ndim-1;
+			npyiter->columnLabelsDim = 0;
+		}
+
 	}
 	PRINTMARK();
 }
@@ -341,7 +365,7 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 	{
 		if (npyiter->rowLabels) 
 		{
-			NpyIter_encodeLabel(tc, npyiter, npyiter->rowLabels, 0);
+			NpyIter_encodeLabel(tc, npyiter, npyiter->rowLabels, npyiter->rowLabelsDim);
 		}
 		npyiter->level++;
 		GET_TC(tc)->itemValue = PyCapsule_New(npyiter, "ujsonNpyIterCtxt", NULL);
@@ -350,9 +374,10 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 	}
 
 	GET_TC(tc)->itemValue = PyArray_GETITEM(npyiter->array, *npyiter->dataptr);
+
 	if (npyiter->columnLabels) 
 	{
-		NpyIter_encodeLabel(tc, npyiter, npyiter->columnLabels, npyiter->ndim-1);
+		NpyIter_encodeLabel(tc, npyiter, npyiter->columnLabels, npyiter->columnLabelsDim);
 	}
 
 	if (!npyiter->iternext(npyiter->iter))
@@ -363,9 +388,19 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 	{
 		npyiter->indexfunc(npyiter->iter, npyiter->index);
 		int i;
-		for (i = npyiter->ndim-1; npyiter->index[i] == 0; i--)
+		if (npyiter->order == NPY_CORDER)
 		{
-			npyiter->closelevel++;
+			for (i = npyiter->ndim-1; npyiter->index[i] == 0; i--)
+			{
+				npyiter->closelevel++;
+			}
+		}
+		else
+		{
+			for (i = 0; npyiter->index[i] == 0; i++)
+			{
+				npyiter->closelevel++;
+			}
 		}
 	}
 
@@ -913,7 +948,7 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_series))
 	{
-		if (enc->outputFormat == INDEXED)
+		if (enc->outputFormat == INDEXED || enc->outputFormat == COLUMN_INDEXED)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
@@ -978,6 +1013,21 @@ ISITERABLE:
 			pc->newObj = PyObject_GetAttrString(obj, "values");
 			pc->rowLabels = PyObject_GetAttrString(obj, "index");
 			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
+			pc->iterBegin = NpyArr_iterBegin;
+			pc->iterEnd = NpyArr_iterEnd;
+			pc->iterNext = NpyIter_iterNext;
+			pc->iterGetValue = NpyIter_iterGetValue;
+			pc->iterGetName = NpyIter_iterGetName;
+		}
+		else 
+		if (enc->outputFormat == COLUMN_INDEXED)
+		{
+			PRINTMARK();
+			tc->type = JT_OBJECT;
+			pc->newObj = PyObject_GetAttrString(obj, "values");
+			pc->rowLabels = PyObject_GetAttrString(obj, "columns");
+			pc->columnLabels = PyObject_GetAttrString(obj, "index");
+			pc->npyiterOrder = NPY_FORTRANORDER;
 			pc->iterBegin = NpyArr_iterBegin;
 			pc->iterEnd = NpyArr_iterEnd;
 			pc->iterNext = NpyIter_iterNext;
@@ -1134,10 +1184,6 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		-1, //recursionMax
 		idoublePrecision,
 		1, //forceAscii
-
-		NULL, //label encoder
-
-		HEADERS, // format
 	};
 	JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
 
@@ -1145,7 +1191,9 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	JSONObjectEncoder* jsonLabelEncoder = (JSONObjectEncoder*) &labelEncoder;
 	jsonLabelEncoder->start = &labelBuffer;
 	jsonLabelEncoder->end = jsonLabelEncoder->start + sizeof(labelBuffer);
+
 	pyEncoder.labelEncoder = &labelEncoder;
+	pyEncoder.outputFormat = COLUMN_INDEXED;
 
 	PRINTMARK();
 
@@ -1166,7 +1214,12 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 			pyEncoder.outputFormat = INDEXED;
 		}
 		else
-		if (strcmp(sFormat, "headers") != 0)
+		if (strcmp(sFormat, "headers") == 0)
+		{
+			pyEncoder.outputFormat = HEADERS;
+		}
+		else
+		if (strcmp(sFormat, "column_indexed") != 0)
 		{
 			PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'format'", sFormat);
 			return NULL;
