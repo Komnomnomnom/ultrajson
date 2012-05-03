@@ -826,18 +826,64 @@ class PandasJSONTests(TestCase):
 
     def testDataFrame(self):
         df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
-        outp = DataFrame(**ujson.decode(ujson.encode(df)))
+
+        # column indexed
+        outp = DataFrame(ujson.decode(ujson.encode(df)))
         self.assertTrue((df == outp).values.all())
+        self.assertTrue((df.columns == outp.columns).values.all())
+        self.assertTrue((df.index == outp.index).values.all())
+
+        outp = DataFrame(**ujson.decode(ujson.encode(df, format="headers")))
+        self.assertTrue((df == outp).values.all())
+        self.assertTrue((df.columns == outp.columns).values.all())
+        self.assertTrue((df.index == outp.index).values.all())
+
+        outp = DataFrame(ujson.decode(ujson.encode(df, format="records")))
+        outp.index = df.index
+        self.assertTrue((df == outp).values.all())
+        self.assertTrue((df.columns == outp.columns).values.all())
+
+        outp = DataFrame(ujson.decode(ujson.encode(df, format="indexed")))
+        self.assertTrue((df.transpose() == outp).values.all())
+        self.assertTrue((df.transpose().columns == outp.columns).values.all())
+        self.assertTrue((df.transpose().index == outp.index).values.all())
 
     def testSeries(self):
-        s = Series([1, 2, 3, 4, 5, 6])
+        s = Series([10, 20, 30, 40, 50, 60], name="series", index=[6,7,8,9,10,15])
+        s.sort()
+
+        # column indexed
         outp = Series(ujson.decode(ujson.encode(s)))
-        self.assertTrue((s == outp).all())
+        outp.sort()
+        self.assertTrue((s == outp).values.all())
+
+        outp = Series(**ujson.decode(ujson.encode(s, format="headers")))
+        self.assertTrue((s == outp).values.all())
+        self.assertTrue(s.name == outp.name)
+
+        outp = Series(ujson.decode(ujson.encode(s, format="records")))
+        self.assertTrue((s == outp).values.all())
+
+        outp = Series(ujson.decode(ujson.encode(s, format="indexed")))
+        outp.sort()
+        self.assertTrue((s == outp).values.all())
 
     def testIndex(self):
-        s = Index([1, 2, 3, 4, 5, 6])
-        outp = Index(ujson.decode(ujson.encode(s)))
-        self.assertTrue((s == outp).all())
+        i = Index([23, 45, 18, 98, 43, 11], name="index")
+
+        # column indexed
+        outp = Index(ujson.decode(ujson.encode(i)))
+        self.assertTrue((i == outp).values.all())
+
+        outp = Index(**ujson.decode(ujson.encode(i, format="headers")))
+        self.assertTrue((i == outp).values.all())
+        self.assertTrue(i.name == outp.name)
+
+        outp = Index(ujson.decode(ujson.encode(i, format="records")))
+        self.assertTrue((i == outp).values.all())
+
+        outp = Index(ujson.decode(ujson.encode(i, format="indexed")))
+        self.assertTrue((i == outp).values.all())
 
 
 """
