@@ -830,23 +830,23 @@ class PandasJSONTests(TestCase):
         # column indexed
         outp = DataFrame(ujson.decode(ujson.encode(df)))
         self.assertTrue((df == outp).values.all())
-        self.assertTrue((df.columns == outp.columns).values.all())
-        self.assertTrue((df.index == outp.index).values.all())
+        assert_array_equal(df.columns, outp.columns)
+        assert_array_equal(df.index, outp.index)
 
         outp = DataFrame(**ujson.decode(ujson.encode(df, format="headers")))
         self.assertTrue((df == outp).values.all())
-        self.assertTrue((df.columns == outp.columns).values.all())
-        self.assertTrue((df.index == outp.index).values.all())
+        assert_array_equal(df.columns, outp.columns)
+        assert_array_equal(df.index, outp.index)
 
         outp = DataFrame(ujson.decode(ujson.encode(df, format="records")))
         outp.index = df.index
         self.assertTrue((df == outp).values.all())
-        self.assertTrue((df.columns == outp.columns).values.all())
+        assert_array_equal(df.columns, outp.columns)
 
         outp = DataFrame(ujson.decode(ujson.encode(df, format="indexed")))
         self.assertTrue((df.transpose() == outp).values.all())
-        self.assertTrue((df.transpose().columns == outp.columns).values.all())
-        self.assertTrue((df.transpose().index == outp.index).values.all())
+        assert_array_equal(df.transpose().columns, outp.columns)
+        assert_array_equal(df.transpose().index, outp.index)
 
     def testSeries(self):
         s = Series([10, 20, 30, 40, 50, 60], name="series", index=[6,7,8,9,10,15])
@@ -873,17 +873,17 @@ class PandasJSONTests(TestCase):
 
         # column indexed
         outp = Index(ujson.decode(ujson.encode(i)))
-        self.assertTrue((i == outp).values.all())
+        assert_array_equal(i, outp)
 
         outp = Index(**ujson.decode(ujson.encode(i, format="headers")))
-        self.assertTrue((i == outp).values.all())
+        assert_array_equal(i, outp)
         self.assertTrue(i.name == outp.name)
 
         outp = Index(ujson.decode(ujson.encode(i, format="records")))
-        self.assertTrue((i == outp).values.all())
+        assert_array_equal(i, outp)
 
         outp = Index(ujson.decode(ujson.encode(i, format="indexed")))
-        self.assertTrue((i == outp).values.all())
+        assert_array_equal(i, outp)
 
 
 """

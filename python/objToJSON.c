@@ -27,8 +27,8 @@ typedef struct __NpyIterContext
 	char **dataptr;
 	npy_intp ndim;
 	npy_intp index[NPY_MAXDIMS];
-	npy_intp level;
-	npy_intp closelevel;
+	npy_intp level; // tracks the nesting level
+	npy_intp closelevel; // number of nesting levels to be closed
 	NPY_ORDER order;
 
 	PyObject* columnLabels;
@@ -76,26 +76,6 @@ typedef struct __PyObjectEncoder
 } PyObjectEncoder;
 
 #define GET_TC(__ptrtc) ((TypeContext *)((__ptrtc)->prv))
-
-
-enum PRIVATE
-{
-	PRV_CONV_FUNC,					// Function pointer to converter function
-	PRV_CONV_NEWOBJ,				// Any new PyObject created by converter function that should be released by releaseValue
-	PRV_ITER_BEGIN_FUNC,		// Function pointer to iterBegin for specific type
-	PRV_ITER_END_FUNC,			// Function pointer to iterEnd for specific type
-	PRV_ITER_NEXT_FUNC,			// Function pointer to iterNext for specific type
-	PRV_ITER_GETVALUE_FUNC,
-	PRV_ITER_GETNAME_FUNC,
-	PRV_ITER_INDEX,					// Index in the iteration list
-	PRV_ITER_SIZE,					// Size of the iteration list
-	PRV_ITER_ITEM,					// Current iter item
-	PRV_ITER_ITEM_NAME,			// Name of iter item
-	PRV_ITER_ITEM_VALUE,		// Value of iteritem
-	PRV_ITER_DICTITEMS,
-	PRV_ITER_DICTOBJ,
-	PRV_ITER_ATTRLIST,
-};
 
 struct PyDictIterState
 {
@@ -272,21 +252,33 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 		npyiter->order = GET_TC(tc)->npyiterOrder;
 		npyiter->array = obj;
 		npyiter->iter = NpyIter_New(
-				(PyArrayObject *) obj, 
+				(PyArrayObject *) obj,
 				NPY_ITER_READONLY | NPY_ITER_REFS_OK | NPY_ITER_MULTI_INDEX,
 				npyiter->order,
 				NPY_NO_CASTING,
-				NULL); 
-		if (!npyiter)
+				NULL);
+
+		if (!npyiter->iter)
 		{
+			free(npyiter);
+			GET_TC(tc)->npyiter = NULL;
 			return;
 		}
+
 		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
 		npyiter->dataptr = NpyIter_GetDataPtrArray(npyiter->iter);
 		npyiter->iternext = NpyIter_GetIterNext(npyiter->iter, NULL);
 		npyiter->ndim = PyArray_NDIM(obj);
 		npyiter->level = 1;
 		npyiter->closelevel = 0;
+
+		if (!npyiter->indexfunc || !npyiter->dataptr || !npyiter->iternext)
+		{
+			NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
+			free(npyiter);
+			GET_TC(tc)->npyiter = NULL;
+			return;
+		}
 
 		npyiter->columnLabels = GET_TC(tc)->columnLabels;
 		npyiter->rowLabels = GET_TC(tc)->rowLabels;
@@ -301,6 +293,16 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 			npyiter->columnLabelsDim = 0;
 		}
 
+		// check that the size of the label arrays match the data dimensions
+		if ( (npyiter->columnLabels && PyArray_Size(npyiter->columnLabels) != PyArray_DIM(obj, npyiter->columnLabelsDim)) ||
+			 (npyiter->rowLabels && PyArray_Size(npyiter->rowLabels) != PyArray_DIM(obj, npyiter->rowLabelsDim)) )
+		{
+			PyErr_SetString(PyExc_ValueError, "Label array sizes do not match corresponding data shape");
+			NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
+			free(npyiter);
+			GET_TC(tc)->npyiter = NULL;
+			return;
+		}
 	}
 	PRINTMARK();
 }
@@ -328,9 +330,10 @@ void NpyIter_encodeLabel(JSONTypeContext* tc, NpyIterContext* npyiter, PyObject*
 	npyiter->indexfunc(npyiter->iter, npyiter->index);
 	void* labelItem = PyArray_GETPTR1(labels, npyiter->index[dim]);
 	PyObject* labelObj = PyArray_GETITEM(labels, labelItem);
-	JSONObjectEncoder* labelEncoder = ((PyObjectEncoder*)tc->encoder)->labelEncoder;
 
+	JSONObjectEncoder* labelEncoder = ((PyObjectEncoder*)tc->encoder)->labelEncoder;
 	GET_TC(tc)->citemName = JSON_EncodeObject(labelObj, labelEncoder, labelEncoder->start, labelEncoder->end - labelEncoder->start);
+
 	// trim off any quotes surrounding the result
 	if (GET_TC(tc)->citemName[0] == '\"')
 	{    
@@ -357,6 +360,7 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 		return 0;
 	}
 
+	// close nesting (add closing brackets/braces)
 	if (npyiter->closelevel)
 	{
 		npyiter->closelevel--;
@@ -365,8 +369,10 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 		return 0;
 	}
 
+	// keep nesting (adding opening brackets/braces) until the number of dimensions is satisfied
 	if (npyiter->level < npyiter->ndim)
 	{
+		// label support is only for 1 or 2 dimensional arrays
 		if (npyiter->rowLabels) 
 		{
 			NpyIter_encodeLabel(tc, npyiter, npyiter->rowLabels, npyiter->rowLabelsDim);
@@ -390,6 +396,7 @@ int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
 	}
 	else
 	{
+		// if we've hit the end of a dimension close the appropriate amount of nesting
 		npyiter->indexfunc(npyiter->iter, npyiter->index);
 		int i;
 		if (npyiter->order == NPY_CORDER)
@@ -889,6 +896,11 @@ char *Dict_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 
 void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 {
+	if (!obj) {
+		tc->type = JT_INVALID;
+		return;
+	}
+
 	TypeContext *pc = (TypeContext *) tc->prv;
 	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	PyObject *toDictFunc;
@@ -1088,6 +1100,7 @@ ISITERABLE:
 			return;
 		}
 
+		PRINTMARK();
 		tc->type = JT_ARRAY;
 		pc->newObj = PyObject_GetAttrString(obj, "values");
 		pc->iterBegin = NpyArr_iterBegin;
@@ -1175,7 +1188,6 @@ ISITERABLE:
 			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
 		}
 		else 
-		if (enc->outputFormat == COLUMN_INDEXED)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
@@ -1183,6 +1195,7 @@ ISITERABLE:
 			pc->columnLabels = PyObject_GetAttrString(obj, "index");
 			pc->npyiterOrder = NPY_FORTRANORDER;
 		}
+		PRINTMARK();
 		pc->newObj = PyObject_GetAttrString(obj, "values");
 		pc->iterBegin = NpyArr_iterBegin;
 		pc->iterEnd = NpyArr_iterEnd;
