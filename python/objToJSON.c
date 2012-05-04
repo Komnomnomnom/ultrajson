@@ -1005,7 +1005,15 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	if (PyFloat_Check(obj))
 	{
 		PRINTMARK();
-		pc->PyTypeToJSON = PyFloatToDOUBLE; tc->type = JT_DOUBLE;
+		double val = PyFloat_AS_DOUBLE (obj);
+		if (npy_isnan(val) || npy_isinf(val))
+		{
+			tc->type = JT_NULL;
+		}
+		else 
+		{
+			pc->PyTypeToJSON = PyFloatToDOUBLE; tc->type = JT_DOUBLE;
+		}
 		return;
 	}
 	else
