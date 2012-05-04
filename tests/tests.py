@@ -286,30 +286,15 @@ class UltraJSONTests(TestCase):
 
     def test_encodeDoubleNan(self):
         input = float('nan')
-        try:
-            ujson.encode(input)
-            assert False, "Expected exception!"
-        except(OverflowError):
-            return
-        assert False, "Wrong exception"
+        assert ujson.encode(input) == 'null', "Expected null"
         
     def test_encodeDoubleInf(self):
         input = float('inf')
-        try:
-            ujson.encode(input)
-            assert False, "Expected exception!"
-        except(OverflowError):
-            return
-        assert False, "Wrong exception"
+        assert ujson.encode(input) == 'null', "Expected null"
             
     def test_encodeDoubleNegInf(self):
         input = -float('inf')
-        try:
-            ujson.encode(input)
-            assert False, "Expected exception!"
-        except(OverflowError):
-            return
-        assert False, "Wrong exception"
+        assert ujson.encode(input) == 'null', "Expected null"
             
 
     def test_decodeJibberish(self):
@@ -833,17 +818,17 @@ class PandasJSONTests(TestCase):
         assert_array_equal(df.columns, outp.columns)
         assert_array_equal(df.index, outp.index)
 
-        outp = DataFrame(**ujson.decode(ujson.encode(df, format="headers")))
+        outp = DataFrame(**ujson.decode(ujson.encode(df, orient="split")))
         self.assertTrue((df == outp).values.all())
         assert_array_equal(df.columns, outp.columns)
         assert_array_equal(df.index, outp.index)
 
-        outp = DataFrame(ujson.decode(ujson.encode(df, format="records")))
+        outp = DataFrame(ujson.decode(ujson.encode(df, orient="records")))
         outp.index = df.index
         self.assertTrue((df == outp).values.all())
         assert_array_equal(df.columns, outp.columns)
 
-        outp = DataFrame(ujson.decode(ujson.encode(df, format="indexed")))
+        outp = DataFrame(ujson.decode(ujson.encode(df, orient="index")))
         self.assertTrue((df.transpose() == outp).values.all())
         assert_array_equal(df.transpose().columns, outp.columns)
         assert_array_equal(df.transpose().index, outp.index)
@@ -857,14 +842,14 @@ class PandasJSONTests(TestCase):
         outp.sort()
         self.assertTrue((s == outp).values.all())
 
-        outp = Series(**ujson.decode(ujson.encode(s, format="headers")))
+        outp = Series(**ujson.decode(ujson.encode(s, orient="split")))
         self.assertTrue((s == outp).values.all())
         self.assertTrue(s.name == outp.name)
 
-        outp = Series(ujson.decode(ujson.encode(s, format="records")))
+        outp = Series(ujson.decode(ujson.encode(s, orient="records")))
         self.assertTrue((s == outp).values.all())
 
-        outp = Series(ujson.decode(ujson.encode(s, format="indexed")))
+        outp = Series(ujson.decode(ujson.encode(s, orient="index")))
         outp.sort()
         self.assertTrue((s == outp).values.all())
 
@@ -875,14 +860,14 @@ class PandasJSONTests(TestCase):
         outp = Index(ujson.decode(ujson.encode(i)))
         assert_array_equal(i, outp)
 
-        outp = Index(**ujson.decode(ujson.encode(i, format="headers")))
+        outp = Index(**ujson.decode(ujson.encode(i, orient="split")))
         assert_array_equal(i, outp)
         self.assertTrue(i.name == outp.name)
 
-        outp = Index(ujson.decode(ujson.encode(i, format="records")))
+        outp = Index(ujson.decode(ujson.encode(i, orient="records")))
         assert_array_equal(i, outp)
 
-        outp = Index(ujson.decode(ujson.encode(i, format="indexed")))
+        outp = Index(ujson.decode(ujson.encode(i, orient="index")))
         assert_array_equal(i, outp)
 
 

@@ -86,10 +86,10 @@ struct PyDictIterState
 
 enum PANDAS_FORMAT
 {
-	HEADERS,
+	SPLIT,
 	RECORDS,
-	INDEXED,
-	COLUMN_INDEXED
+	INDEX,
+	COLUMNS
 };
 
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
@@ -1096,7 +1096,7 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_index))
 	{
-		if (enc->outputFormat == HEADERS) 
+		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
@@ -1121,7 +1121,7 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_series))
 	{
-		if (enc->outputFormat == HEADERS) 
+		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
 			enc->outputFormat = RECORDS; // keep contained index data type simple
@@ -1134,7 +1134,7 @@ ISITERABLE:
 			return;
 		}
 
-		if (enc->outputFormat == INDEXED || enc->outputFormat == COLUMN_INDEXED)
+		if (enc->outputFormat == INDEX || enc->outputFormat == COLUMNS)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
@@ -1168,7 +1168,7 @@ ISITERABLE:
 	else
 	if (PyObject_TypeCheck(obj, cls_dataframe))
 	{
-		if (enc->outputFormat == HEADERS) 
+		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
 			enc->outputFormat = RECORDS; // keep contained index data type simple
@@ -1188,7 +1188,7 @@ ISITERABLE:
 			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
 		}
 		else 
-		if (enc->outputFormat == INDEXED)
+		if (enc->outputFormat == INDEX)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
@@ -1329,7 +1329,7 @@ char *Object_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 
 PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 {
-	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "format", NULL};
+	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "orient", NULL};
 
 	char buffer[65536];
 	char labelBuffer[1024];
@@ -1337,7 +1337,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	PyObject *newobj;
 	PyObject *oinput = NULL;
 	PyObject *oensureAscii = NULL;
-	char *sFormat = NULL;
+	char *sOrient = NULL;
 	int idoublePrecision = 5; // default double precision setting
 
 	PyObjectEncoder pyEncoder = 
@@ -1369,35 +1369,35 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	jsonLabelEncoder->end = jsonLabelEncoder->start + sizeof(labelBuffer);
 
 	pyEncoder.labelEncoder = &labelEncoder;
-	pyEncoder.outputFormat = COLUMN_INDEXED;
+	pyEncoder.outputFormat = COLUMNS;
 
 	PRINTMARK();
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|Ois", kwlist, &oinput, &oensureAscii, &idoublePrecision, &sFormat))
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|Ois", kwlist, &oinput, &oensureAscii, &idoublePrecision, &sOrient))
 	{
 		return NULL;
 	}
 
-	if (sFormat != NULL)
+	if (sOrient != NULL)
 	{
-		if (strcmp(sFormat, "records") == 0)
+		if (strcmp(sOrient, "records") == 0)
 		{
 			pyEncoder.outputFormat = RECORDS;
 		} 
 		else
-		if (strcmp(sFormat, "indexed") == 0)
+		if (strcmp(sOrient, "index") == 0)
 		{
-			pyEncoder.outputFormat = INDEXED;
+			pyEncoder.outputFormat = INDEX;
 		}
 		else
-		if (strcmp(sFormat, "headers") == 0)
+		if (strcmp(sOrient, "split") == 0)
 		{
-			pyEncoder.outputFormat = HEADERS;
+			pyEncoder.outputFormat = SPLIT;
 		}
 		else
-		if (strcmp(sFormat, "column_indexed") != 0)
+		if (strcmp(sOrient, "columns") != 0)
 		{
-			PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'format'", sFormat);
+			PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'orient'", sOrient);
 			return NULL;
 		}
 	}
