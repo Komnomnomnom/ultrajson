@@ -5,8 +5,8 @@
 #include <datetime.h>
 #include <ultrajson.h>
 
-static PyObject* meth_timegm;
-static PyObject* mod_calendar;
+#define EPOCH_ORD 719163
+
 static PyObject* cls_dataframe;
 static PyObject* cls_series;
 static PyObject* cls_index;
@@ -18,24 +18,22 @@ typedef void *(*PFN_PyTypeToJSON)(JSOBJ obj, JSONTypeContext *ti, void *outValue
 typedef ssize_t Py_ssize_t;
 #endif
 
-typedef struct __NpyIterContext
+typedef struct __NpyArrContext
 {
 	PyObject *array;
-	NpyIter *iter;
-	NpyIter_GetMultiIndexFunc *indexfunc;
-	NpyIter_IterNextFunc *iternext;
-	char **dataptr;
+	char* dataptr;
+	int curdim;         // current dimension in array's order
+	int stridedim;      // dimension we are striding over
+	int inc;            // stride dimension increment (+/- 1)
+	npy_intp dim;
+	npy_intp stride;
 	npy_intp ndim;
 	npy_intp index[NPY_MAXDIMS];
-	npy_intp level; // tracks the nesting level
-	npy_intp closelevel; // number of nesting levels to be closed
-	NPY_ORDER order;
+	PyArray_GetItemFunc* getitem;
 
-	PyObject* columnLabels;
-	npy_intp columnLabelsDim;
-	PyObject* rowLabels;
-	npy_intp rowLabelsDim;
-} NpyIterContext;
+	char** rowLabels;
+	char** columnLabels;
+} NpyArrContext;
 
 typedef struct __TypeContext
 {
@@ -56,10 +54,12 @@ typedef struct __TypeContext
 
 	JSINT64 longValue;
 
-	PyObject* rowLabels;
-	PyObject* columnLabels;
-	NPY_ORDER npyiterOrder;
-	NpyIterContext *npyiter;
+	NpyArrContext *npyarr;
+	int transpose;
+	char** rowLabels;
+	char** columnLabels;
+	npy_intp rowLabelsLen;
+	npy_intp columnLabelsLen;
 
 } TypeContext;
 
@@ -67,9 +67,8 @@ typedef struct __PyObjectEncoder
 {
 	JSONObjectEncoder enc;
 
-	// need a separate encoder for labels as USJON always assumes they are strings
-	// and using the current encoder would mess up the buffer
-	JSONObjectEncoder* labelEncoder;
+	// pass through the NpyArrContext when encoding multi-dimensional arrays
+	NpyArrContext* npyCtxtPassthru;
 
 	// output format style for pandas data types
 	int outputFormat;
@@ -97,16 +96,7 @@ enum PANDAS_FORMAT
 
 void initObjToJSON()
 {
-	//FIXME: DECREF on these?
 	PyDateTime_IMPORT;
-
-	/*
-	FIXME: Find the direct function pointer here instead and use it when time conversion is performed */
-
-	meth_timegm = PyString_FromString("timegm");
-	mod_calendar = PyImport_ImportModule("calendar");
-
-	Py_INCREF(mod_calendar);
 
 	PyObject *mod_frame = PyImport_ImportModule("pandas.core.frame");
 	cls_dataframe = PyObject_GetAttrString(mod_frame, "DataFrame");
@@ -183,47 +173,47 @@ static void *PyUnicodeToUTF8(JSOBJ _obj, JSONTypeContext *tc, void *outValue, si
 static void *PyDateTimeToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
 {
 	PyObject *obj = (PyObject *) _obj;
+	int y, m, d, h, mn, s, days;
 
-	PyObject* timetuple = PyObject_CallMethod(obj, "utctimetuple", NULL);
-	PyObject* unixTimestamp = PyObject_CallMethodObjArgs(mod_calendar, meth_timegm, timetuple, NULL);
-	
-	*( (JSINT64 *) outValue) = PyLong_AsLongLong (unixTimestamp);
-	Py_DECREF(timetuple);
-	Py_DECREF(unixTimestamp);
+	y = PyDateTime_GET_YEAR(obj);
+	m = PyDateTime_GET_MONTH(obj);
+	d = PyDateTime_GET_DAY(obj);
+	h = PyDateTime_DATE_GET_HOUR(obj);
+	mn = PyDateTime_DATE_GET_MINUTE(obj);
+	s = PyDateTime_DATE_GET_SECOND(obj);
+
+	days = PyInt_AS_LONG(PyObject_CallMethod(PyDate_FromDate(y, m, 1), "toordinal", NULL)) - EPOCH_ORD + d - 1;
+	*( (JSINT64 *) outValue) = (((JSINT64) ((days * 24 + h) * 60 + mn)) * 60 + s);
 	return NULL;
 }
 
 static void *PyDateToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
 {
 	PyObject *obj = (PyObject *) _obj;
+	int y, m, d, days;
 
-	PyObject* timetuple = PyTuple_New(6);
-	PyObject* year = PyObject_GetAttrString(obj, "year");
-	PyObject* month = PyObject_GetAttrString(obj, "month");
-	PyObject* day = PyObject_GetAttrString(obj, "day");
-	PyObject* unixTimestamp;
+	y = PyDateTime_GET_YEAR(obj);
+	m = PyDateTime_GET_MONTH(obj);
+	d = PyDateTime_GET_DAY(obj);
 
-	PyTuple_SET_ITEM(timetuple, 0, year);
-	PyTuple_SET_ITEM(timetuple, 1, month);
-	PyTuple_SET_ITEM(timetuple, 2, day);
-	PyTuple_SET_ITEM(timetuple, 3, PyInt_FromLong(0));
-	PyTuple_SET_ITEM(timetuple, 4, PyInt_FromLong(0));
-	PyTuple_SET_ITEM(timetuple, 5, PyInt_FromLong(0));
+	days = PyInt_AS_LONG(PyObject_CallMethod(PyDate_FromDate(y, m, 1), "toordinal", NULL)) - EPOCH_ORD + d - 1;
+	*( (JSINT64 *) outValue) = ((JSINT64) days * 86400);
 
-	unixTimestamp = PyObject_CallMethodObjArgs(mod_calendar, meth_timegm, timetuple, NULL);
-
-	*( (JSINT64 *) outValue) = PyLong_AsLongLong (unixTimestamp);
-	Py_DECREF(timetuple);
-	Py_DECREF(unixTimestamp);
 	return NULL;
 }
 
 //=============================================================================
 // Numpy array iteration functions 
 //=============================================================================
+int NpyArr_iterNextNone(JSOBJ _obj, JSONTypeContext *tc)
+{
+	return 0;
+}
+
 void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 {
 	PyArrayObject *obj;
+
 	if (GET_TC(tc)->newObj)
 	{
 		obj = (PyArrayObject *) GET_TC(tc)->newObj;
@@ -235,207 +225,144 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 
 	if (PyArray_SIZE(obj) > 0)
 	{
-		NpyIterContext *npyiter = malloc(sizeof(NpyIterContext));
-		
-		if (!npyiter)
+		PRINTMARK();
+		NpyArrContext *npyarr = PyMem_Malloc(sizeof(NpyArrContext));
+		GET_TC(tc)->npyarr = npyarr;
+
+		if (!npyarr)
 		{
 			PyErr_NoMemory();
+			GET_TC(tc)->iterNext = NpyArr_iterNextNone;
 			return;
 		}
 
-		if (!GET_TC(tc)->npyiterOrder)
+		npyarr->array = obj;
+		npyarr->getitem = PyArray_DESCR(obj)->f->getitem;
+		npyarr->dataptr = PyArray_DATA(obj);
+		npyarr->ndim = PyArray_NDIM(obj) - 1;
+		npyarr->curdim = 0;
+
+		if (GET_TC(tc)->transpose)
 		{
-			GET_TC(tc)->npyiterOrder = NPY_CORDER;
-		}
-
-		GET_TC(tc)->npyiter = npyiter;
-		npyiter->order = GET_TC(tc)->npyiterOrder;
-		npyiter->array = obj;
-		npyiter->iter = NpyIter_New(
-				(PyArrayObject *) obj,
-				NPY_ITER_READONLY | NPY_ITER_REFS_OK | NPY_ITER_MULTI_INDEX,
-				npyiter->order,
-				NPY_NO_CASTING,
-				NULL);
-
-		if (!npyiter->iter)
-		{
-			free(npyiter);
-			GET_TC(tc)->npyiter = NULL;
-			return;
-		}
-
-		npyiter->indexfunc = NpyIter_GetGetMultiIndex(npyiter->iter, NULL);
-		npyiter->dataptr = NpyIter_GetDataPtrArray(npyiter->iter);
-		npyiter->iternext = NpyIter_GetIterNext(npyiter->iter, NULL);
-		npyiter->ndim = PyArray_NDIM(obj);
-		npyiter->level = 1;
-		npyiter->closelevel = 0;
-
-		if (!npyiter->indexfunc || !npyiter->dataptr || !npyiter->iternext)
-		{
-			NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
-			free(npyiter);
-			GET_TC(tc)->npyiter = NULL;
-			return;
-		}
-
-		npyiter->columnLabels = GET_TC(tc)->columnLabels;
-		npyiter->rowLabels = GET_TC(tc)->rowLabels;
-		if (npyiter->order == NPY_CORDER) 
-		{
-			npyiter->rowLabelsDim = 0;
-			npyiter->columnLabelsDim = npyiter->ndim-1;
+			npyarr->dim = PyArray_DIM(obj, npyarr->ndim);
+			npyarr->stride = PyArray_STRIDE(obj, npyarr->ndim);
+			npyarr->stridedim = npyarr->ndim;
+			npyarr->index[npyarr->ndim] = 0;
+			npyarr->inc = -1;
 		}
 		else
 		{
-			npyiter->rowLabelsDim = npyiter->ndim-1;
-			npyiter->columnLabelsDim = 0;
+			npyarr->dim = PyArray_DIM(obj, 0);
+			npyarr->stride = PyArray_STRIDE(obj, 0);
+			npyarr->stridedim = 0;
+			npyarr->index[0] = 0;
+			npyarr->inc = 1;
 		}
 
-		// check that the size of the label arrays match the data dimensions
-		if ( (npyiter->columnLabels && PyArray_Size(npyiter->columnLabels) != PyArray_DIM(obj, npyiter->columnLabelsDim)) ||
-			 (npyiter->rowLabels && PyArray_Size(npyiter->rowLabels) != PyArray_DIM(obj, npyiter->rowLabelsDim)) )
-		{
-			PyErr_SetString(PyExc_ValueError, "Label array sizes do not match corresponding data shape");
-			NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
-			free(npyiter);
-			GET_TC(tc)->npyiter = NULL;
-			return;
-		}
+		npyarr->columnLabels = GET_TC(tc)->columnLabels;
+		npyarr->rowLabels = GET_TC(tc)->rowLabels;
+	}
+	else 
+	{
+		GET_TC(tc)->iterNext = NpyArr_iterNextNone;
 	}
 	PRINTMARK();
 }
 
 void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
-	if (GET_TC(tc)->npyiter)
+	if (GET_TC(tc)->npyarr)
 	{ 
-		NpyIter_Deallocate(GET_TC(tc)->npyiter->iter);
-		free(GET_TC(tc)->npyiter);
+		PyMem_Free(GET_TC(tc)->npyarr);
 	}
 	Py_XDECREF(GET_TC(tc)->newObj);
 	PRINTMARK();
-}
+}   
 
-void NpyIter_iterBegin(JSOBJ obj, JSONTypeContext *tc)
+void NpyArrPassThru_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	PRINTMARK();
 }
 
-void NpyIter_encodeLabel(JSONTypeContext* tc, NpyIterContext* npyiter, PyObject* labels, npy_intp dim)
+void NpyArrPassThru_iterEnd(JSOBJ obj, JSONTypeContext *tc)
+{
+	PRINTMARK();   
+	// finished this dimension, reset the data pointer
+	NpyArrContext* npyarr = GET_TC(tc)->npyarr;
+	npyarr->curdim--;
+	npyarr->dataptr -= npyarr->stride * npyarr->index[npyarr->stridedim];
+	npyarr->stridedim -= npyarr->inc;
+	npyarr->dim = PyArray_DIM(npyarr->array, npyarr->stridedim);
+	npyarr->stride = PyArray_STRIDE(npyarr->array, npyarr->stridedim);
+	npyarr->dataptr += npyarr->stride;    
+}  
+
+int NpyArr_iterNextItem(JSOBJ _obj, JSONTypeContext *tc)
 {
 	PRINTMARK();
-	// get the label object from the label array
-	npyiter->indexfunc(npyiter->iter, npyiter->index);
-	void* labelItem = PyArray_GETPTR1(labels, npyiter->index[dim]);
-	PyObject* labelObj = PyArray_GETITEM(labels, labelItem);
+	NpyArrContext* npyarr = GET_TC(tc)->npyarr;
 
-	JSONObjectEncoder* labelEncoder = ((PyObjectEncoder*)tc->encoder)->labelEncoder;
-	GET_TC(tc)->citemName = JSON_EncodeObject(labelObj, labelEncoder, labelEncoder->start, labelEncoder->end - labelEncoder->start);
-
-	// trim off any quotes surrounding the result
-	if (GET_TC(tc)->citemName[0] == '\"')
-	{    
-		GET_TC(tc)->citemName++;
-		*(labelEncoder->offset-2) = '\0';
-	}
-}
-
-int NpyIter_iterNext(JSOBJ _obj, JSONTypeContext *tc)
-{
-	NpyIterContext *npyiter;
-	if (PyCapsule_CheckExact(_obj))
+	if (npyarr->index[npyarr->stridedim] >= npyarr->dim) 
 	{
-		npyiter = PyCapsule_GetPointer(_obj, "ujsonNpyIterCtxt");
-	}
-	else
-	{
-		npyiter = GET_TC(tc)->npyiter;
-	}
-
-	if (!npyiter || !npyiter->iternext)
-	{
-		PRINTMARK();
 		return 0;
 	}
 
-	// close nesting (add closing brackets/braces)
-	if (npyiter->closelevel)
-	{
-		npyiter->closelevel--;
-		npyiter->level--;
-		PRINTMARK();
-		return 0;
-	}
+	GET_TC(tc)->itemValue = npyarr->getitem(npyarr->dataptr, npyarr->array);
 
-	// keep nesting (adding opening brackets/braces) until the number of dimensions is satisfied
-	if (npyiter->level < npyiter->ndim)
-	{
-		// label support is only for 1 or 2 dimensional arrays
-		if (npyiter->rowLabels) 
-		{
-			NpyIter_encodeLabel(tc, npyiter, npyiter->rowLabels, npyiter->rowLabelsDim);
-		}
-		npyiter->level++;
-		GET_TC(tc)->itemValue = PyCapsule_New(npyiter, "ujsonNpyIterCtxt", NULL);
-		PRINTMARK();
-		return 1;
-	}
-
-	GET_TC(tc)->itemValue = PyArray_GETITEM(npyiter->array, *npyiter->dataptr);
-
-	if (npyiter->columnLabels) 
-	{
-		NpyIter_encodeLabel(tc, npyiter, npyiter->columnLabels, npyiter->columnLabelsDim);
-	}
-
-	if (!npyiter->iternext(npyiter->iter))
-	{
-		npyiter->iternext = NULL;
-	}
-	else
-	{
-		// if we've hit the end of a dimension close the appropriate amount of nesting
-		npyiter->indexfunc(npyiter->iter, npyiter->index);
-		int i;
-		if (npyiter->order == NPY_CORDER)
-		{
-			for (i = npyiter->ndim-1; npyiter->index[i] == 0; i--)
-			{
-				npyiter->closelevel++;
-			}
-		}
-		else
-		{
-			for (i = 0; npyiter->index[i] == 0; i++)
-			{
-				npyiter->closelevel++;
-			}
-		}
-	}
-
-	PRINTMARK();
+	npyarr->dataptr += npyarr->stride;
+	npyarr->index[npyarr->stridedim]++;
 	return 1;
 }
 
-JSOBJ NpyIter_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
+int NpyArr_iterNext(JSOBJ _obj, JSONTypeContext *tc)
+{
+	PRINTMARK();
+	NpyArrContext *npyarr = GET_TC(tc)->npyarr;
+
+	if (npyarr->curdim >= npyarr->ndim || npyarr->index[npyarr->stridedim] >= npyarr->dim)
+	{
+		// innermost dimension, start retrieving item values
+		GET_TC(tc)->iterNext = NpyArr_iterNextItem;
+		return NpyArr_iterNextItem(_obj, tc);
+	}
+
+	// dig a dimension deeper
+	npyarr->index[npyarr->stridedim]++;
+
+	npyarr->curdim++;
+	npyarr->stridedim += npyarr->inc;
+	npyarr->dim = PyArray_DIM(npyarr->array, npyarr->stridedim);
+	npyarr->stride = PyArray_STRIDE(npyarr->array, npyarr->stridedim);
+	npyarr->index[npyarr->stridedim] = 0;
+
+	((PyObjectEncoder*) tc->encoder)->npyCtxtPassthru = npyarr;
+	GET_TC(tc)->itemValue = npyarr->array;
+	return 1;
+}
+
+JSOBJ NpyArr_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
 {
 	PRINTMARK();
 	return GET_TC(tc)->itemValue;
 }
 
-char *NpyIter_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
+char *NpyArr_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 {
 	PRINTMARK();
-	*outLen = strlen(GET_TC(tc)->citemName);
-	return GET_TC(tc)->citemName;
-}
-
-void NpyIter_iterEnd(JSOBJ obj, JSONTypeContext *tc)
-{
-	Py_CLEAR(obj);
-	PRINTMARK();
+	NpyArrContext *npyarr = GET_TC(tc)->npyarr;
+	npy_intp idx;
+	if (GET_TC(tc)->iterNext == NpyArr_iterNextItem)
+	{
+		idx = npyarr->index[npyarr->stridedim] - 1;
+		*outLen = strlen(npyarr->columnLabels[idx]);
+		return npyarr->columnLabels[idx];
+	}
+	else
+	{
+		idx = npyarr->index[npyarr->stridedim - npyarr->inc] - 1;
+		*outLen = strlen(npyarr->rowLabels[idx]);
+		return npyarr->rowLabels[idx];
+	}
 }
 
 //=============================================================================
@@ -624,7 +551,7 @@ char *List_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void Index_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -667,7 +594,7 @@ void Index_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		free(GET_TC(tc)->citemName);
+		PyMem_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -689,7 +616,7 @@ char *Index_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void Series_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -738,7 +665,7 @@ void Series_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		free(GET_TC(tc)->citemName);
+		PyMem_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -760,7 +687,7 @@ char *Series_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void DataFrame_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -809,7 +736,7 @@ void DataFrame_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		free(GET_TC(tc)->citemName);
+		PyMem_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -894,8 +821,78 @@ char *Dict_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 	return PyString_AS_STRING(GET_TC(tc)->itemName);
 }
 
+void NpyArr_freeLabels(char** labels, npy_intp len)
+{
+	npy_intp i;
+
+	if (labels) 
+	{
+		for (i = 0; i < len; i++)
+		{
+			PyMem_Free(labels[i]);
+		}
+		PyMem_Free(labels);
+	}
+}
+
+char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_intp num)
+{
+	PRINTMARK();
+	npy_intp i, stride, bufsize, len;
+	char** ret;
+	char *dataptr, *cLabel;
+	PyArray_GetItemFunc* getitem;
+
+	if (PyArray_SIZE(labels) < num)
+	{
+		PyErr_SetString(PyExc_ValueError, "Label array sizes do not match corresponding data shape");
+		return 0;
+	}
+
+	ret = PyMem_Malloc(sizeof(char*)*num);
+	if (!ret)
+	{
+		PyErr_NoMemory();
+		return 0;
+	}
+
+	bufsize = enc->end - enc->start;
+	stride = PyArray_STRIDE(labels, 0);
+	dataptr = PyArray_DATA(labels);  
+	getitem = PyArray_DESCR(labels)->f->getitem;
+
+	for (i = 0; i < num; i++)
+	{
+		cLabel = JSON_EncodeObject(getitem(dataptr, labels), enc, enc->start, bufsize);
+
+		// trim off any quotes surrounding the result
+		if (*cLabel == '\"')
+		{    
+			cLabel++;
+			enc->offset -= 2;
+			*(enc->offset) = '\0';
+		}
+
+		len = enc->offset - cLabel + 1;
+		ret[i] = PyMem_Malloc(sizeof(char)*len);
+
+		if (!ret[i])
+		{
+			PyErr_NoMemory();
+			return 0;
+		}
+
+		memcpy(ret[i], cLabel, len);
+		dataptr += stride;
+	}
+
+	enc->offset = enc->start;
+	return ret;
+}
+
 void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 {
+	PRINTMARK();
 	if (!obj) {
 		tc->type = JT_INVALID;
 		return;
@@ -914,18 +911,6 @@ void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 	if (PyIter_Check(obj) || PyArray_Check(obj))
 	{
 		goto ISITERABLE;
-	}
-	else 
-	if (PyCapsule_IsValid(obj, "ujsonNpyIterCtxt"))
-	{
-		NpyIterContext *npyiter = PyCapsule_GetPointer(obj, "ujsonNpyIterCtxt");
-		tc->type = (npyiter->columnLabels ? JT_OBJECT : JT_ARRAY);
-		pc->iterBegin = NpyIter_iterBegin;
-		pc->iterEnd = NpyIter_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
-		return;
 	}
 
 	if (PyBool_Check(obj))
@@ -1113,9 +1098,9 @@ ISITERABLE:
 		pc->newObj = PyObject_GetAttrString(obj, "values");
 		pc->iterBegin = NpyArr_iterBegin;
 		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
+		pc->iterNext = NpyArr_iterNext;
+		pc->iterGetValue = NpyArr_iterGetValue;
+		pc->iterGetName = NpyArr_iterGetName;
 		return;
 	}
 	else
@@ -1124,7 +1109,7 @@ ISITERABLE:
 		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
-			enc->outputFormat = RECORDS; // keep contained index data type simple
+			enc->outputFormat = RECORDS;  // for contained index
 			tc->type = JT_OBJECT;
 			pc->iterBegin = Series_iterBegin;
 			pc->iterEnd = Series_iterEnd;
@@ -1138,7 +1123,13 @@ ISITERABLE:
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
-			pc->columnLabels = PyObject_GetAttrString(obj, "index");
+			pc->columnLabelsLen = PyArray_SIZE(obj);
+			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->columnLabelsLen);
+			if (!pc->columnLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
 		}
 		else
 		{
@@ -1148,21 +1139,35 @@ ISITERABLE:
 		pc->newObj = PyObject_GetAttrString(obj, "values");
 		pc->iterBegin = NpyArr_iterBegin;
 		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
+		pc->iterNext = NpyArr_iterNext;
+		pc->iterGetValue = NpyArr_iterGetValue;
+		pc->iterGetName = NpyArr_iterGetName;
 		return;
 	}
 	else
 	if (PyArray_Check(obj))
 	{
+		if (enc->npyCtxtPassthru)
+		{
+			PRINTMARK();
+			pc->npyarr = enc->npyCtxtPassthru;
+			tc->type = (pc->npyarr->columnLabels ? JT_OBJECT : JT_ARRAY);
+			pc->iterBegin = NpyArrPassThru_iterBegin;
+			pc->iterEnd = NpyArrPassThru_iterEnd;
+			pc->iterNext = NpyArr_iterNext;
+			pc->iterGetValue = NpyArr_iterGetValue;
+			pc->iterGetName = NpyArr_iterGetName;
+			enc->npyCtxtPassthru = NULL;
+			return;
+		}
+
 		PRINTMARK();
 		tc->type = JT_ARRAY;
 		pc->iterBegin = NpyArr_iterBegin;
 		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
+		pc->iterNext = NpyArr_iterNext;
+		pc->iterGetValue = NpyArr_iterGetValue;
+		pc->iterGetName = NpyArr_iterGetName;
 		return;
 	}
 	else
@@ -1171,7 +1176,7 @@ ISITERABLE:
 		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
-			enc->outputFormat = RECORDS; // keep contained index data type simple
+			enc->outputFormat = RECORDS; // for contained index and series
 			tc->type = JT_OBJECT;
 			pc->iterBegin = DataFrame_iterBegin;
 			pc->iterEnd = DataFrame_iterEnd;
@@ -1181,35 +1186,65 @@ ISITERABLE:
 			return;
 		}
 
+		PRINTMARK();
+		pc->newObj = PyObject_GetAttrString(obj, "values");
+		pc->iterBegin = NpyArr_iterBegin;
+		pc->iterEnd = NpyArr_iterEnd;
+		pc->iterNext = NpyArr_iterNext;
+		pc->iterGetValue = NpyArr_iterGetValue;
+		pc->iterGetName = NpyArr_iterGetName;
 		if (enc->outputFormat == RECORDS)
 		{
 			PRINTMARK();
 			tc->type = JT_ARRAY;
-			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
+			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 1);
+			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->columnLabelsLen);
+			if (!pc->columnLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
 		}
 		else 
 		if (enc->outputFormat == INDEX)
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
-			pc->rowLabels = PyObject_GetAttrString(obj, "index");
-			pc->columnLabels = PyObject_GetAttrString(obj, "columns");
+			pc->rowLabelsLen = PyArray_DIM(pc->newObj, 0);
+			pc->rowLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->rowLabelsLen);
+			if (!pc->rowLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
+			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 1);
+			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->columnLabelsLen);
+			if (!pc->columnLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
 		}
 		else 
 		{
 			PRINTMARK();
 			tc->type = JT_OBJECT;
-			pc->rowLabels = PyObject_GetAttrString(obj, "columns");
-			pc->columnLabels = PyObject_GetAttrString(obj, "index");
-			pc->npyiterOrder = NPY_FORTRANORDER;
+			pc->rowLabelsLen = PyArray_DIM(pc->newObj, 1);
+			pc->rowLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->rowLabelsLen);
+			if (!pc->rowLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
+			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 0);
+			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->columnLabelsLen);
+			if (!pc->columnLabels)
+			{
+				tc->type = JT_INVALID;
+				return;
+			}
+			pc->transpose = 1;
 		}
-		PRINTMARK();
-		pc->newObj = PyObject_GetAttrString(obj, "values");
-		pc->iterBegin = NpyArr_iterBegin;
-		pc->iterEnd = NpyArr_iterEnd;
-		pc->iterNext = NpyIter_iterNext;
-		pc->iterGetValue = NpyIter_iterGetValue;
-		pc->iterGetName = NpyIter_iterGetName;
 		return;
 	}
 
@@ -1264,6 +1299,8 @@ ISITERABLE:
 void Object_endTypeContext(JSOBJ obj, JSONTypeContext *tc)
 {
 	Py_XDECREF(GET_TC(tc)->newObj);
+	NpyArr_freeLabels(GET_TC(tc)->rowLabels, GET_TC(tc)->rowLabelsLen);
+	NpyArr_freeLabels(GET_TC(tc)->columnLabels, GET_TC(tc)->columnLabelsLen);
 }
 
 const char *Object_getStringValue(JSOBJ obj, JSONTypeContext *tc, size_t *_outLen)
@@ -1332,7 +1369,6 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "orient", NULL};
 
 	char buffer[65536];
-	char labelBuffer[1024];
 	char *ret;
 	PyObject *newobj;
 	PyObject *oinput = NULL;
@@ -1363,12 +1399,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	};
 	JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
 
-	PyObjectEncoder labelEncoder = pyEncoder;
-	JSONObjectEncoder* jsonLabelEncoder = (JSONObjectEncoder*) &labelEncoder;
-	jsonLabelEncoder->start = &labelBuffer;
-	jsonLabelEncoder->end = jsonLabelEncoder->start + sizeof(labelBuffer);
-
-	pyEncoder.labelEncoder = &labelEncoder;
+	pyEncoder.npyCtxtPassthru = NULL;
 	pyEncoder.outputFormat = COLUMNS;
 
 	PRINTMARK();
