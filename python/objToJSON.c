@@ -88,7 +88,8 @@ enum PANDAS_FORMAT
 	SPLIT,
 	RECORDS,
 	INDEX,
-	COLUMNS
+	COLUMNS,
+	VALUES
 };
 
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
@@ -1193,6 +1194,12 @@ ISITERABLE:
 		pc->iterNext = NpyArr_iterNext;
 		pc->iterGetValue = NpyArr_iterGetValue;
 		pc->iterGetName = NpyArr_iterGetName;
+		if (enc->outputFormat == VALUES)
+		{
+			PRINTMARK();
+			tc->type = JT_ARRAY;
+		}
+        else
 		if (enc->outputFormat == RECORDS)
 		{
 			PRINTMARK();
@@ -1424,6 +1431,11 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		if (strcmp(sOrient, "split") == 0)
 		{
 			pyEncoder.outputFormat = SPLIT;
+		}
+		else
+		if (strcmp(sOrient, "values") == 0)
+		{
+			pyEncoder.outputFormat = VALUES;
 		}
 		else
 		if (strcmp(sOrient, "columns") != 0)
