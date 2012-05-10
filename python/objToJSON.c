@@ -96,7 +96,7 @@ enum PANDAS_FORMAT
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)		
 #define PRINTMARK()
 
-void initObjToJSON()
+void initObjToJSON(void)
 {
 	PyDateTime_IMPORT;
 
@@ -126,7 +126,6 @@ static void *PyIntToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_
 
 static void *PyLongToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
 {
-	PyObject *obj = (PyObject *) _obj;
 	*((JSINT64 *) outValue) = GET_TC(tc)->longValue;
 	return NULL;
 }
@@ -238,8 +237,8 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 			return;
 		}
 
-		npyarr->array = obj;
-		npyarr->getitem = PyArray_DESCR(obj)->f->getitem;
+		npyarr->array = (PyObject*) obj;
+		npyarr->getitem = (PyArray_GetItemFunc*) PyArray_DESCR(obj)->f->getitem;
 		npyarr->dataptr = PyArray_DATA(obj);
 		npyarr->ndim = PyArray_NDIM(obj) - 1;
 		npyarr->curdim = 0;
@@ -892,14 +891,15 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 	return ret;
 }
 
-void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
+void Object_beginTypeContext (JSOBJ _obj, JSONTypeContext *tc)
 {
 	PRINTMARK();
-	if (!obj) {
+	if (!_obj) {
 		tc->type = JT_INVALID;
 		return;
 	}
 
+	PyObject* obj = (PyObject*) _obj;
 	TypeContext *pc = (TypeContext *) tc->prv;
 	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	PyObject *toDictFunc;
@@ -1081,7 +1081,7 @@ ISITERABLE:
 		return;
 	}
 	else
-	if (PyObject_TypeCheck(obj, cls_index))
+	if (PyObject_TypeCheck(obj, (PyTypeObject*) cls_index))
 	{
 		if (enc->outputFormat == SPLIT) 
 		{
@@ -1106,7 +1106,7 @@ ISITERABLE:
 		return;
 	}
 	else
-	if (PyObject_TypeCheck(obj, cls_series))
+	if (PyObject_TypeCheck(obj, (PyTypeObject*) cls_series))
 	{
 		if (enc->outputFormat == SPLIT) 
 		{
@@ -1126,7 +1126,7 @@ ISITERABLE:
 			PRINTMARK();
 			tc->type = JT_OBJECT;
 			pc->columnLabelsLen = PyArray_SIZE(obj);
-			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->columnLabelsLen);
+			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "index"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
 				tc->type = JT_INVALID;
@@ -1173,7 +1173,7 @@ ISITERABLE:
 		return;
 	}
 	else
-	if (PyObject_TypeCheck(obj, cls_dataframe))
+	if (PyObject_TypeCheck(obj, (PyTypeObject*) cls_dataframe))
 	{
 		if (enc->outputFormat == SPLIT) 
 		{
@@ -1200,13 +1200,13 @@ ISITERABLE:
 			PRINTMARK();
 			tc->type = JT_ARRAY;
 		}
-        else
+		else
 		if (enc->outputFormat == RECORDS)
 		{
 			PRINTMARK();
 			tc->type = JT_ARRAY;
 			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 1);
-			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->columnLabelsLen);
+			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "columns"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
 				tc->type = JT_INVALID;
@@ -1219,14 +1219,14 @@ ISITERABLE:
 			PRINTMARK();
 			tc->type = JT_OBJECT;
 			pc->rowLabelsLen = PyArray_DIM(pc->newObj, 0);
-			pc->rowLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->rowLabelsLen);
+			pc->rowLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "index"), (JSONObjectEncoder*) enc, pc->rowLabelsLen);
 			if (!pc->rowLabels)
 			{
 				tc->type = JT_INVALID;
 				return;
 			}
 			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 1);
-			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->columnLabelsLen);
+			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "columns"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
 				tc->type = JT_INVALID;
@@ -1238,14 +1238,14 @@ ISITERABLE:
 			PRINTMARK();
 			tc->type = JT_OBJECT;
 			pc->rowLabelsLen = PyArray_DIM(pc->newObj, 1);
-			pc->rowLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "columns"), enc, pc->rowLabelsLen);
+			pc->rowLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "columns"), (JSONObjectEncoder*) enc, pc->rowLabelsLen);
 			if (!pc->rowLabels)
 			{
 				tc->type = JT_INVALID;
 				return;
 			}
 			pc->columnLabelsLen = PyArray_DIM(pc->newObj, 0);
-			pc->columnLabels = NpyArr_encodeLabels(PyObject_GetAttrString(obj, "index"), enc, pc->columnLabelsLen);
+			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "index"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
 				tc->type = JT_INVALID;
@@ -1339,7 +1339,7 @@ double Object_getDoubleValue(JSOBJ obj, JSONTypeContext *tc)
 	return ret;
 }
 
-static void Object_releaseObject(JSOBJ *_obj)
+static void Object_releaseObject(JSOBJ _obj)
 {
 	Py_DECREF( (PyObject *) _obj);
 }
@@ -1386,24 +1386,26 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 
 	PyObjectEncoder pyEncoder = 
 	{
-		Object_beginTypeContext,	//void (*beginTypeContext)(JSOBJ obj, JSONTypeContext *tc);
-		Object_endTypeContext, //void (*endTypeContext)(JSOBJ obj, JSONTypeContext *tc);
-		Object_getStringValue, //const char *(*getStringValue)(JSOBJ obj, JSONTypeContext *tc, size_t *_outLen);
-		Object_getLongValue, //JSLONG (*getLongValue)(JSOBJ obj, JSONTypeContext *tc);
-		Object_getIntValue, //JSLONG (*getLongValue)(JSOBJ obj, JSONTypeContext *tc);
-		Object_getDoubleValue, //double (*getDoubleValue)(JSOBJ obj, JSONTypeContext *tc);
-		Object_iterBegin, //JSPFN_ITERBEGIN iterBegin;
-		Object_iterNext, //JSPFN_ITERNEXT iterNext;
-		Object_iterEnd, //JSPFN_ITEREND iterEnd;
-		Object_iterGetValue, //JSPFN_ITERGETVALUE iterGetValue;
-		Object_iterGetName, //JSPFN_ITERGETNAME iterGetName;
-		Object_releaseObject, //void (*releaseValue)(JSONTypeContext *ti);
-		PyObject_Malloc, //JSPFN_MALLOC malloc;
-		PyObject_Realloc, //JSPFN_REALLOC realloc;
-		PyObject_Free, //JSPFN_FREE free;
-		-1, //recursionMax
-		idoublePrecision,
-		1, //forceAscii
+		{
+			Object_beginTypeContext,	//void (*beginTypeContext)(JSOBJ obj, JSONTypeContext *tc);
+			Object_endTypeContext, //void (*endTypeContext)(JSOBJ obj, JSONTypeContext *tc);
+			Object_getStringValue, //const char *(*getStringValue)(JSOBJ obj, JSONTypeContext *tc, size_t *_outLen);
+			Object_getLongValue, //JSLONG (*getLongValue)(JSOBJ obj, JSONTypeContext *tc);
+			Object_getIntValue, //JSLONG (*getLongValue)(JSOBJ obj, JSONTypeContext *tc);
+			Object_getDoubleValue, //double (*getDoubleValue)(JSOBJ obj, JSONTypeContext *tc);
+			Object_iterBegin, //JSPFN_ITERBEGIN iterBegin;
+			Object_iterNext, //JSPFN_ITERNEXT iterNext;
+			Object_iterEnd, //JSPFN_ITEREND iterEnd;
+			Object_iterGetValue, //JSPFN_ITERGETVALUE iterGetValue;
+			Object_iterGetName, //JSPFN_ITERGETNAME iterGetName;
+			Object_releaseObject, //void (*releaseValue)(JSONTypeContext *ti);
+			PyObject_Malloc, //JSPFN_MALLOC malloc;
+			PyObject_Realloc, //JSPFN_REALLOC realloc;
+			PyObject_Free, //JSPFN_FREE free;
+			-1, //recursionMax
+			idoublePrecision,
+			1, //forceAscii
+		}
 	};
 	JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
 

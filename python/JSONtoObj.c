@@ -17,8 +17,8 @@ typedef struct __PyObjectDecoder
 
 typedef struct __NpyArrContext
 {
-	PyArrayObject* ret;
-	PyArrayObject* labels[2];
+	PyObject* ret;
+	PyObject* labels[2];
 	PyArray_Dims shape;
 
 	PyObjectDecoder* dec;
@@ -38,19 +38,19 @@ typedef struct __NpyArrContext
 // to ensure the compiler catches any errors
 
 // standard numpy array handling
-JSOBJ Object_npyNewArray(PyObjectDecoder* decoder);
+JSOBJ Object_npyNewArray(void* decoder);
 JSOBJ Object_npyEndArray(JSOBJ obj);
 int Object_npyArrayAddItem(JSOBJ obj, JSOBJ value);
 
 // for more complex dtypes (object and string) fill a standard Python list
 // and convert to a numpy array when done.
-JSOBJ Object_npyNewArrayList(PyObjectDecoder* decoder);
+JSOBJ Object_npyNewArrayList(void* decoder);
 JSOBJ Object_npyEndArrayList(JSOBJ obj);
 int Object_npyArrayListAddItem(JSOBJ obj, JSOBJ value);
 
 // labelled support, encode keys and values of JS object into separate numpy
 // arrays
-JSOBJ Object_npyNewObject(PyObjectDecoder* decoder);
+JSOBJ Object_npyNewObject(void* decoder);
 JSOBJ Object_npyEndObject(JSOBJ obj);
 int Object_npyObjectAddKey(JSOBJ obj, JSOBJ name, JSOBJ value);
 
@@ -79,9 +79,10 @@ void Npy_releaseContext(NpyArrContext* npyarr)
 	}
 }
 
-JSOBJ Object_npyNewArray(PyObjectDecoder* decoder)
+JSOBJ Object_npyNewArray(void* _decoder)
 {
 	PRINTMARK();
+	PyObjectDecoder* decoder = (PyObjectDecoder*) _decoder;
 	NpyArrContext* npyarr;
 	if (decoder->curdim <= 0)
 	{
@@ -102,7 +103,7 @@ JSOBJ Object_npyNewArray(PyObjectDecoder* decoder)
 		npyarr->ret = NULL;
 
 		npyarr->elsize = 0;
-		npyarr->elcount = 0;
+		npyarr->elcount = 4;
 		npyarr->i = 0;
 	}
 	else
@@ -129,7 +130,7 @@ JSOBJ Object_npyEndArray(JSOBJ obj)
 		return NULL;
 	}
 
-	PyArrayObject* ret = npyarr->ret;
+	PyObject* ret = npyarr->ret;
 	int emptyType = NPY_DEFAULT_TYPE;
 	npy_intp i = npyarr->i;
 	char* new_data;
@@ -142,7 +143,7 @@ JSOBJ Object_npyEndArray(JSOBJ obj)
 		{
 			emptyType = npyarr->dec->dtype->type_num;
 		}
-		npyarr->ret = ret = (PyArrayObject*) PyArray_EMPTY(npyarr->shape.len, npyarr->shape.ptr, emptyType, 0);
+		npyarr->ret = ret = PyArray_EMPTY(npyarr->shape.len, npyarr->shape.ptr, emptyType, 0);
 	}
 	else if (npyarr->dec->curdim <= 0)
 	{
@@ -153,7 +154,7 @@ JSOBJ Object_npyEndArray(JSOBJ obj)
 			Npy_releaseContext(npyarr);
 			return NULL;
 		}
-		PyArray_DATA(ret) = new_data;
+		((char*)PyArray_DATA(ret)) = new_data;
 	}
 
 	if (npyarr->dec->curdim <= 0)
@@ -161,7 +162,7 @@ JSOBJ Object_npyEndArray(JSOBJ obj)
 		// finished decoding array, reshape if necessary
 		if (npyarr->shape.len > 1)
 		{
-			npyarr->ret = PyArray_Newshape(ret, &npyarr->shape, NPY_ANYORDER);
+			npyarr->ret = PyArray_Newshape((PyArrayObject*) ret, &npyarr->shape, NPY_ANYORDER);
 			Py_DECREF(ret);
 			ret = npyarr->ret;
 		}
@@ -258,8 +259,8 @@ int Object_npyArrayAddItem(JSOBJ obj, JSOBJ value)
 			return Object_npyArrayListAddItem(obj, value);
 		}
 
-		npyarr->ret = (PyArrayObject *)PyArray_NewFromDescr(&PyArray_Type, dtype, 1,
-															&npyarr->elcount, NULL,NULL, 0, NULL);
+		npyarr->ret = PyArray_NewFromDescr(&PyArray_Type, dtype, 1,
+										   &npyarr->elcount, NULL,NULL, 0, NULL);
 
 		if (!npyarr->ret) 
 		{
@@ -285,7 +286,7 @@ int Object_npyArrayAddItem(JSOBJ obj, JSOBJ value)
 			PyErr_NoMemory();
 			goto fail;
 		}
-		PyArray_DATA(npyarr->ret) = new_data;
+		((char*)PyArray_DATA(npyarr->ret)) = new_data;
 	}
 
 	PyArray_DIMS(npyarr->ret)[0] = i + 1;
@@ -305,9 +306,10 @@ fail:
 	return 0;
 }
 
-JSOBJ Object_npyNewArrayList(PyObjectDecoder* decoder)
+JSOBJ Object_npyNewArrayList(void* _decoder)
 {
 	PRINTMARK();
+	PyObjectDecoder* decoder = (PyObjectDecoder*) _decoder;
 	PyErr_SetString(PyExc_ValueError, "nesting not supported for object or variable length dtypes");
 	Npy_releaseContext(decoder->npyarr);
 	return NULL;
@@ -347,9 +349,10 @@ int Object_npyArrayListAddItem(JSOBJ obj, JSOBJ value)
 }
 
 
-JSOBJ Object_npyNewObject(PyObjectDecoder* decoder)
+JSOBJ Object_npyNewObject(void* _decoder)
 {
 	PRINTMARK();
+	PyObjectDecoder* decoder = (PyObjectDecoder*) _decoder;
 	if (decoder->curdim > 1)
 	{
 		PyErr_SetString(PyExc_ValueError, "labels only supported up to 2 dimensions");
@@ -388,7 +391,6 @@ int Object_npyObjectAddKey(JSOBJ obj, JSOBJ name, JSOBJ value)
 	}
 
 	PyObject* label = (PyObject*) name;
-	PyObject* ret;
 	npy_intp labelidx = npyarr->dec->curdim-1;
 
 	if (!npyarr->labels[labelidx])
@@ -446,7 +448,7 @@ JSOBJ Object_newNull(void)
 	Py_RETURN_NONE;
 }
 
-JSOBJ Object_newObject(PyObjectDecoder* decoder)
+JSOBJ Object_newObject(void* decoder)
 {
 	return PyDict_New();
 }
@@ -456,7 +458,7 @@ JSOBJ Object_endObject(JSOBJ obj)
 	return obj;
 }
 
-JSOBJ Object_newArray(PyObjectDecoder* decoder)
+JSOBJ Object_newArray(void* decoder)
 {
 	return PyList_New(0);
 }
@@ -481,14 +483,14 @@ JSOBJ Object_newDouble(double value)
 	return PyFloat_FromDouble(value);
 }
 
-static void Object_releaseObject(JSOBJ obj, PyObjectDecoder* dec)
+static void Object_releaseObject(JSOBJ obj, void* _decoder)
 {
-	if (obj != dec->npyarr)
+	PyObjectDecoder* decoder = (PyObjectDecoder*) _decoder;
+	if (obj != decoder->npyarr)
 	{
 		Py_XDECREF( ((PyObject *)obj));
 	}
 }
-
 
 
 PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
@@ -503,23 +505,25 @@ PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
 
 	PyObjectDecoder pyDecoder =
 	{
-		Object_newString,
-		Object_objectAddKey,
-		Object_arrayAddItem,
-		Object_newTrue,
-		Object_newFalse,
-		Object_newNull,
-		Object_newObject,
-		Object_endObject,
-		Object_newArray,
-		Object_endArray,
-		Object_newInteger,
-		Object_newLong,
-		Object_newDouble,
-		Object_releaseObject,
-		PyObject_Malloc,
-		PyObject_Free,
-		PyObject_Realloc,
+		{
+			Object_newString,
+			Object_objectAddKey,
+			Object_arrayAddItem,
+			Object_newTrue,
+			Object_newFalse,
+			Object_newNull,
+			Object_newObject,
+			Object_endObject,
+			Object_newArray,
+			Object_endArray,
+			Object_newInteger,
+			Object_newLong,
+			Object_newDouble,
+			Object_releaseObject,
+			PyObject_Malloc,
+			PyObject_Free,
+			PyObject_Realloc,
+		}
 	};
 
 	pyDecoder.curdim = 0;
