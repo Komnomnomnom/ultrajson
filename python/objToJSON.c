@@ -1,4 +1,5 @@
 #include <Python.h>
+#define PY_ARRAY_UNIQUE_SYMBOL UJSON_NUMPY
 #include <numpy/arrayobject.h>
 #include <numpy/halffloat.h>
 #include <stdio.h>

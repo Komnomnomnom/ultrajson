@@ -2,26 +2,26 @@
 #include "version.h"
 
 /* objToJSON */
-PyObject* objToJSON(PyObject* self, PyObject *arg);
+PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs);
 void initObjToJSON();
 
 /* JSONToObj */
-PyObject* JSONToObj(PyObject* self, PyObject *arg);
+PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs);
 
 /* objToJSONFile */
-PyObject* objToJSONFile(PyObject* self, PyObject *args);
+PyObject* objToJSONFile(PyObject* self, PyObject *args, PyObject *kwargs);
 
 /* JSONFileToObj */
-PyObject* JSONFileToObj(PyObject* self, PyObject *file);
+PyObject* JSONFileToObj(PyObject* self, PyObject *args, PyObject *kwargs);
 
 
 static PyMethodDef ujsonMethods[] = {
 	{"encode", objToJSON, METH_VARARGS | METH_KEYWORDS, "Converts arbitrary object recursivly into JSON. Use ensure_ascii=false to output UTF-8. Pass in double_precision to alter the maximum digit precision with doubles"},
-	{"decode", JSONToObj, METH_O, "Converts JSON as string to dict object structure"},
+	{"decode", JSONToObj, METH_VARARGS | METH_KEYWORDS, "Converts JSON as string to dict object structure"},
 	{"dumps", objToJSON, METH_VARARGS | METH_KEYWORDS,  "Converts arbitrary object recursivly into JSON. Use ensure_ascii=false to output UTF-8"},
-	{"loads", JSONToObj, METH_O,  "Converts JSON as string to dict object structure"},
+	{"loads", JSONToObj, METH_VARARGS | METH_KEYWORDS,  "Converts JSON as string to dict object structure"},
 	{"dump", objToJSONFile, METH_VARARGS | METH_KEYWORDS, "Converts arbitrary object recursively into JSON file. Use ensure_ascii=false to output UTF-8"},
-	{"load", JSONFileToObj, METH_O, "Converts JSON as file to dict object structure"},
+	{"load", JSONFileToObj, METH_VARARGS | METH_KEYWORDS, "Converts JSON as file to dict object structure"},
 	{NULL, NULL, 0, NULL}		/* Sentinel */
 };
 

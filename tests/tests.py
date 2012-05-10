@@ -53,6 +53,8 @@ class UltraJSONTests(TestCase):
         self.assertEquals(input, json.loads(output))
         #self.assertEquals(output, json.dumps(input))
         self.assertEquals(input, ujson.decode(output))
+        input = np.array(input)
+        assert_array_equal(input, ujson.decode(output, numpy=True, dtype=input.dtype))
 
     def test_encodeArrayOfDoubles(self):
         input = [ 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337, 31337.31337 ]
@@ -60,6 +62,7 @@ class UltraJSONTests(TestCase):
         self.assertEquals(input, json.loads(output))
         #self.assertEquals(output, json.dumps(input))
         self.assertEquals(input, ujson.decode(output))
+        assert_array_equal(np.array(input), ujson.decode(output, numpy=True))
 
     def test_doublePrecisionTest(self):
         input = 30.012345678
@@ -159,6 +162,7 @@ class UltraJSONTests(TestCase):
         self.assertEquals(input, json.loads(output))
         self.assertEquals(output, json.dumps(input))
         self.assertEquals(input, ujson.decode(output))
+        assert_array_equal(np.array(input), ujson.decode(output, numpy=True))
         pass
 
     def test_encodeIntConversion(self):
@@ -195,6 +199,7 @@ class UltraJSONTests(TestCase):
         output = ujson.encode(input)
         self.assertEquals(input, json.loads(output))
         self.assertEquals(input, ujson.decode(output))
+        assert_array_equal(np.array(input), ujson.decode(output, numpy=True))
         pass
 
     def test_encodeDictConversion(self):
@@ -502,6 +507,7 @@ class UltraJSONTests(TestCase):
         output = ujson.encode(input)
         self.assertEquals(input, json.loads(output))
         self.assertEquals(input, ujson.decode(output))
+        assert_array_equal(np.array(input), ujson.decode(output, numpy=True))
         pass
 
     def test_encodeLongConversion(self):
@@ -578,6 +584,8 @@ class UltraJSONTests(TestCase):
     def test_loadFile(self):
         f = StringIO.StringIO("[1,2,3,4]")
         self.assertEquals([1, 2, 3, 4], ujson.load(f))
+        f = StringIO.StringIO("[1,2,3,4]")
+        assert_array_equal(np.array([1, 2, 3, 4]), ujson.load(f, numpy=True))
 
     def test_loadFileLikeObject(self):
         class filelike:
@@ -589,6 +597,8 @@ class UltraJSONTests(TestCase):
                     return "[1,2,3,4]"
         f = filelike()
         self.assertEquals([1, 2, 3, 4], ujson.load(f))
+        f = filelike()
+        assert_array_equal(np.array([1, 2, 3, 4]), ujson.load(f, numpy=True))
 
     def test_loadFileArgsError(self):
         try:
@@ -736,7 +746,7 @@ class NumpyJSONTests(TestCase):
         num = np.uint32(np.iinfo(np.uint32).max)
         self.assertEqual(np.uint32(ujson.decode(ujson.encode(num))), num)
 
-        #num = np.uint64(np.iinfo(np.uint64).max) # TODO always overflow
+        #num = np.uint64(np.iinfo(np.uint64).max) # FIXME always overflow
         #self.assertEqual(np.uint64(ujson.decode(ujson.encode(num))), num))
 
     def testFloat(self):
@@ -785,18 +795,22 @@ class NumpyJSONTests(TestCase):
 
         arr = arr.reshape((10, 10))
         assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+        assert_array_equal(ujson.decode(ujson.encode(arr), numpy=True), arr)
 
         arr = arr.reshape((5, 5, 4))
         assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+        assert_array_equal(ujson.decode(ujson.encode(arr), numpy=True), arr)
 
         arr = arr.reshape((100, 1))
         assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+        assert_array_equal(ujson.decode(ujson.encode(arr), numpy=True), arr)
 
         arr = np.arange(96);
         arr = arr.reshape((2, 2, 2, 2, 3, 2))
         assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
+        assert_array_equal(ujson.decode(ujson.encode(arr), numpy=True), arr)
 
-        l = [list(), dict(), dict(), list(), 
+        l = ['a', list(), dict(), dict(), list(), 
              42, 97.8, ['a', 'b'], {'key': 'val'}]
         arr = np.array(l)
         assert_array_equal(np.array(ujson.decode(ujson.encode(arr))), arr)
@@ -805,7 +819,119 @@ class NumpyJSONTests(TestCase):
         arr = arr.reshape((5, 5, 4))
         outp = np.array(ujson.decode(ujson.encode(arr)), dtype=np.float32)
         assert_array_almost_equal_nulp(arr, outp)
+        outp = ujson.decode(ujson.encode(arr), numpy=True, dtype=np.float32)
+        assert_array_almost_equal_nulp(arr, outp)
 
+    def testArrayNumpyExcept(self):
+
+        input = ujson.dumps([42, {}, 'a'])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(TypeError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps(['a', 'b', [], 'c'])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([['a'], 42])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([42, ['a'], 42])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([{}, []])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([42, None])
+        try:
+            ujson.decode(input, numpy=True)
+            assert False, "Expected exception!"
+        except(TypeError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([{'a': 'b'}])
+        try:
+            ujson.decode(input, numpy=True, labelled=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps({'a': {'b': {'c': 42}}})
+        try:
+            ujson.decode(input, numpy=True, labelled=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+        input = ujson.dumps([{'a': 42, 'b': 23}, {'c': 17}])
+        try:
+            ujson.decode(input, numpy=True, labelled=True)
+            assert False, "Expected exception!"
+        except(ValueError):
+            pass
+        except:
+            assert False, "Wrong exception"
+
+    def testArrayNumpyLabelled(self):
+        input = {'a': []}
+        output = ujson.loads(ujson.dumps(input), numpy=True, labelled=True)
+        self.assertTrue((np.empty((1, 0)) == output[0]).all())
+        self.assertTrue((np.array(['a']) == output[1]).all())
+        self.assertTrue(output[2] is None)
+
+        input = [{'a': 42}]
+        output = ujson.loads(ujson.dumps(input), numpy=True, labelled=True)
+        self.assertTrue((np.array([42]) == output[0]).all())
+        self.assertTrue(output[1] is None)
+        self.assertTrue((np.array([u'a']) == output[2]).all())
+
+        input = [{'a': 42, 'b':31}, {'a': 24, 'c': 99}, {'a': 2.4, 'b': 78}]
+        output = ujson.loads(ujson.dumps(input), numpy=True, labelled=True)
+        expectedvals = np.array([42, 31, 24, 99, 2.4, 78], dtype=int).reshape((3,2))
+        self.assertTrue((expectedvals == output[0]).all())
+        self.assertTrue(output[1] is None)
+        self.assertTrue((np.array([u'a', 'b']) == output[2]).all())
+
+
+        input = {1: {'a': 42, 'b':31}, 2: {'a': 24, 'c': 99}, 3: {'a': 2.4, 'b': 78}}
+        output = ujson.loads(ujson.dumps(input), numpy=True, labelled=True)
+        expectedvals = np.array([42, 31, 24, 99, 2.4, 78], dtype=int).reshape((3,2))
+        self.assertTrue((expectedvals == output[0]).all())
+        self.assertTrue((np.array(['1','2','3']) == output[1]).all())
+        self.assertTrue((np.array(['a', 'b']) == output[2]).all())
 
 class PandasJSONTests(TestCase):
 
@@ -833,6 +959,44 @@ class PandasJSONTests(TestCase):
         assert_array_equal(df.transpose().columns, outp.columns)
         assert_array_equal(df.transpose().index, outp.index)
 
+    def testDataFrameNumpy(self):
+        df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
+
+        # column indexed
+        outp = DataFrame(ujson.decode(ujson.encode(df), numpy=True))
+        self.assertTrue((df == outp).values.all())
+        assert_array_equal(df.columns, outp.columns)
+        assert_array_equal(df.index, outp.index)
+
+        outp = DataFrame(**ujson.decode(ujson.encode(df, orient="split"), numpy=True))
+        self.assertTrue((df == outp).values.all())
+        assert_array_equal(df.columns, outp.columns)
+        assert_array_equal(df.index, outp.index)
+
+        outp = DataFrame(ujson.decode(ujson.encode(df, orient="index"), numpy=True))
+        self.assertTrue((df.transpose() == outp).values.all())
+        assert_array_equal(df.transpose().columns, outp.columns)
+        assert_array_equal(df.transpose().index, outp.index)
+
+    def testDataFrameNumpyLabelled(self):
+        df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
+
+        # column indexed
+        outp = DataFrame(*ujson.decode(ujson.encode(df), numpy=True, labelled=True))
+        self.assertTrue((df.T == outp).values.all())
+        assert_array_equal(df.T.columns, outp.columns)
+        assert_array_equal(df.T.index, outp.index)
+
+        outp = DataFrame(*ujson.decode(ujson.encode(df, orient="records"), numpy=True, labelled=True))
+        outp.index = df.index
+        self.assertTrue((df == outp).values.all())
+        assert_array_equal(df.columns, outp.columns)
+
+        outp = DataFrame(*ujson.decode(ujson.encode(df, orient="index"), numpy=True, labelled=True))
+        self.assertTrue((df == outp).values.all())
+        assert_array_equal(df.columns, outp.columns)
+        assert_array_equal(df.index, outp.index)
+
     def testSeries(self):
         s = Series([10, 20, 30, 40, 50, 60], name="series", index=[6,7,8,9,10,15])
         s.sort()
@@ -842,14 +1006,29 @@ class PandasJSONTests(TestCase):
         outp.sort()
         self.assertTrue((s == outp).values.all())
 
+        outp = Series(ujson.decode(ujson.encode(s), numpy=True))
+        outp.sort()
+        self.assertTrue((s == outp).values.all())
+
         outp = Series(**ujson.decode(ujson.encode(s, orient="split")))
         self.assertTrue((s == outp).values.all())
         self.assertTrue(s.name == outp.name)
+
+        outp = Series(**ujson.decode(ujson.encode(s, orient="split"), numpy=True))
+        self.assertTrue((s == outp).values.all())
+        self.assertTrue(s.name == outp.name)
+
+        outp = Series(ujson.decode(ujson.encode(s, orient="records"), numpy=True))
+        self.assertTrue((s == outp).values.all())
 
         outp = Series(ujson.decode(ujson.encode(s, orient="records")))
         self.assertTrue((s == outp).values.all())
 
         outp = Series(ujson.decode(ujson.encode(s, orient="index")))
+        outp.sort()
+        self.assertTrue((s == outp).values.all())
+
+        outp = Series(ujson.decode(ujson.encode(s, orient="index"), numpy=True))
         outp.sort()
         self.assertTrue((s == outp).values.all())
 
@@ -860,14 +1039,27 @@ class PandasJSONTests(TestCase):
         outp = Index(ujson.decode(ujson.encode(i)))
         assert_array_equal(i, outp)
 
+        outp = Index(ujson.decode(ujson.encode(i), numpy=True))
+        assert_array_equal(i, outp)
+
         outp = Index(**ujson.decode(ujson.encode(i, orient="split")))
+        assert_array_equal(i, outp)
+        self.assertTrue(i.name == outp.name)
+
+        outp = Index(**ujson.decode(ujson.encode(i, orient="split"), numpy=True))
         assert_array_equal(i, outp)
         self.assertTrue(i.name == outp.name)
 
         outp = Index(ujson.decode(ujson.encode(i, orient="records")))
         assert_array_equal(i, outp)
 
+        outp = Index(ujson.decode(ujson.encode(i, orient="records"), numpy=True))
+        assert_array_equal(i, outp)
+
         outp = Index(ujson.decode(ujson.encode(i, orient="index")))
+        assert_array_equal(i, outp)
+
+        outp = Index(ujson.decode(ujson.encode(i, orient="index"), numpy=True))
         assert_array_equal(i, outp)
 
 

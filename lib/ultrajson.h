@@ -272,17 +272,19 @@ EXPORTFUNCTION char *JSON_EncodeObject(JSOBJ obj, JSONObjectEncoder *enc, char *
 typedef struct __JSONObjectDecoder
 {
 	JSOBJ (*newString)(wchar_t *start, wchar_t *end);
-	void (*objectAddKey)(JSOBJ obj, JSOBJ name, JSOBJ value);
-	void (*arrayAddItem)(JSOBJ obj, JSOBJ value);
+	int (*objectAddKey)(JSOBJ obj, JSOBJ name, JSOBJ value);
+	int (*arrayAddItem)(JSOBJ obj, JSOBJ value);
 	JSOBJ (*newTrue)(void);
 	JSOBJ (*newFalse)(void);
 	JSOBJ (*newNull)(void);
-	JSOBJ (*newObject)(void);
-	JSOBJ (*newArray)(void);
+	JSOBJ (*newObject)(void *decoder);
+	JSOBJ (*endObject)(JSOBJ obj);
+	JSOBJ (*newArray)(void *decoder);
+	JSOBJ (*endArray)(JSOBJ obj);
 	JSOBJ (*newInt)(JSINT32 value);
 	JSOBJ (*newLong)(JSINT64 value);
 	JSOBJ (*newDouble)(double value);
-	void (*releaseObject)(JSOBJ obj);
+	void (*releaseObject)(JSOBJ obj, void *decoder);
 	JSPFN_MALLOC malloc;
 	JSPFN_FREE free;
 	JSPFN_REALLOC realloc;
