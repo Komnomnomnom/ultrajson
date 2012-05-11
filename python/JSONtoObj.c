@@ -374,8 +374,11 @@ JSOBJ Object_npyEndObject(JSOBJ obj)
 	npy_intp labelidx = npyarr->dec->curdim-1;
 
 	PyObject* list = npyarr->labels[labelidx];
-	npyarr->labels[labelidx] = PyArray_FROM_O(list);
-	Py_DECREF(list);
+	if (list)
+	{
+		npyarr->labels[labelidx] = PyArray_FROM_O(list);
+		Py_DECREF(list);
+	}
 
 	return (PyObject*) ((JSONObjectDecoder*)npyarr->dec)->endArray(obj);
 }
