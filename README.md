@@ -9,7 +9,7 @@ When decoding to numpy arrays, the dtype is 'sniffed' from the first decoded
 array entry, or the desired dtype can be specified beforehand. Note decoding
 to numpy is switched off by default. 
 
-With the labelled option set to true JSON objects are decoded to numpy arrays  
+With the labelled option set to true JSON objects are decoded to numpy arrays 
 of keys and values, returned in a tuple. This is to support DataFrame 
 decoding (see example below).
 
@@ -18,18 +18,18 @@ floating point values have been increased.
 
 Benchmarks:
 
-64-bit benchmarks MAC OSX (Snow Leopard)
-Python 2.7.2+ (default, Feb 20 2012, 23:30:20)
-OS Version: Mac OSX 10.6.8
-System Type: x64-based MacBook Pro
-Processor: Intel(R) Core 2 Duo(TM) CPU @ 2.4 GHz
-Total Physical Memory: 4096 MB
+64-bit benchmarks MAC OSX (Snow Leopard)  
+Python 2.7.2+ (default, Feb 20 2012, 23:30:20)  
+OS Version: Mac OSX 10.6.8  
+System Type: x64-based MacBook Pro  
+Processor: Intel(R) Core 2 Duo(TM) CPU @ 2.4 GHz  
+Total Physical Memory: 4096 MB  
 
-numpy 1.6.1
+numpy 1.6.1  
 pandas 0.8.0.dev-4c4c7b3
 
-py-yajl 0.3.5 => http://rtyler.github.com/py-yajl
-simplejson 2.3.2 => http://simplejson.readthedocs.org/en/latest/index.html
+py-yajl 0.3.5 => http://rtyler.github.com/py-yajl  
+simplejson 2.3.2 => http://simplejson.readthedocs.org/en/latest/index.html  
 cjson 1.0.5 => http://pypi.python.org/pypi/python-cjson
 
 Note the main interest when benchmarking was to get a rough idea of the 
@@ -127,7 +127,7 @@ Out[19]:
  array([u'x', u'y', u'z'], 
       dtype='<U1'))
 ```
-
+```
 Array with 256 utf-8 strings :
 ujson encode        : 4923.96119 calls/sec
 ujson encode NP     : 2937.75959 calls/sec
@@ -321,7 +321,7 @@ simplejson decode   : 200.60099 calls/sec
 yajl decode         : 154.91891 calls/sec   
 
 *) Transpose required after decoding
-
+```
 See (python/pandasbenchmark.py) and README_UJSON for further information.
 
 
