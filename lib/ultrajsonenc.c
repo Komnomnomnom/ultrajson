@@ -457,9 +457,9 @@ int Buffer_AppendDoubleUnchecked(JSOBJ obj, JSONObjectEncoder *enc, double value
 	double diff = 0.0;
 	char* str = enc->offset;
 	char* wstr = str;
-	unsigned long whole;
+	unsigned long long whole;
 	double tmp;
-	unsigned long frac;
+	unsigned long long frac;
 	int neg;
 	double pow10;
 
@@ -486,9 +486,9 @@ int Buffer_AppendDoubleUnchecked(JSOBJ obj, JSONObjectEncoder *enc, double value
 
 	pow10 = g_pow10[enc->doublePrecision];
 
-	whole = (unsigned long) value;
+	whole = (unsigned long long) value;
 	tmp = (value - whole) * pow10;
-	frac = (unsigned long)(tmp);
+	frac = (unsigned long long)(tmp);
 	diff = tmp - frac;
 
 	if (diff > 0.5) 
