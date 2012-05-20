@@ -8,6 +8,7 @@ try:
 except ImportError:
     import simplejson as json
 import math
+import platform
 import time
 import datetime
 import calendar
@@ -692,7 +693,7 @@ class NumpyJSONTests(TestCase):
         num = np.int(2562010)
         self.assertEqual(np.int(ujson.decode(ujson.encode(num))), num)
 
-        num = np.int8(2562010)
+        num = np.int8(127)
         self.assertEqual(np.int8(ujson.decode(ujson.encode(num))), num)
 
         num = np.int16(2562010)
@@ -704,7 +705,7 @@ class NumpyJSONTests(TestCase):
         num = np.int64(2562010)
         self.assertEqual(np.int64(ujson.decode(ujson.encode(num))), num)
 
-        num = np.uint8(2562010)
+        num = np.uint8(255)
         self.assertEqual(np.uint8(ujson.decode(ujson.encode(num))), num)
 
         num = np.uint16(2562010)
@@ -738,9 +739,6 @@ class NumpyJSONTests(TestCase):
         num = np.int32(np.iinfo(np.int32).max)
         self.assertEqual(np.int32(ujson.decode(ujson.encode(num))), num)
 
-        num = np.int64(np.iinfo(np.int64).max)
-        self.assertEqual(np.int64(ujson.decode(ujson.encode(num))), num)
-
         num = np.uint8(np.iinfo(np.uint8).max)
         self.assertEqual(np.uint8(ujson.decode(ujson.encode(num))), num)
 
@@ -750,8 +748,13 @@ class NumpyJSONTests(TestCase):
         num = np.uint32(np.iinfo(np.uint32).max)
         self.assertEqual(np.uint32(ujson.decode(ujson.encode(num))), num)
 
-        #num = np.uint64(np.iinfo(np.uint64).max) # FIXME always overflow
-        #self.assertEqual(np.uint64(ujson.decode(ujson.encode(num))), num))
+        if platform.architecture()[0] != '32bit':
+            num = np.int64(np.iinfo(np.int64).max)
+            self.assertEqual(np.int64(ujson.decode(ujson.encode(num))), num)
+
+            # uint64 max will always overflow as it's encoded to signed
+            num = np.uint64(np.iinfo(np.int64).max) 
+            self.assertEqual(np.uint64(ujson.decode(ujson.encode(num))), num)
 
     def testFloat(self):
         num = np.float(256.2013)
