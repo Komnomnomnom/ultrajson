@@ -73,6 +73,7 @@ typedef struct __PyObjectEncoder
 
 	// output format style for pandas data types
 	int outputFormat;
+	int originalOutputFormat;
 } PyObjectEncoder;
 
 #define GET_TC(__ptrtc) ((TypeContext *)((__ptrtc)->prv))
@@ -631,6 +632,7 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 		return 0;
 	}
 
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	Py_ssize_t index = GET_TC(tc)->index;
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
@@ -641,6 +643,7 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 	else
 	if (index == 1)
 	{
+		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
@@ -663,6 +666,8 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 
 void Series_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
+	enc->outputFormat = enc->originalOutputFormat;
 	if (GET_TC(tc)->citemName)
 	{
 		PyObject_Free(GET_TC(tc)->citemName);
@@ -702,16 +707,19 @@ int DataFrame_iterNext(JSOBJ obj, JSONTypeContext *tc)
 		return 0;
 	}
 
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	Py_ssize_t index = GET_TC(tc)->index;
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
 	{
+		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "columns", sizeof(char)*8);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "columns");
 	}
 	else
 	if (index == 1)
 	{
+		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
@@ -734,6 +742,8 @@ int DataFrame_iterNext(JSOBJ obj, JSONTypeContext *tc)
 
 void DataFrame_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
+	enc->outputFormat = enc->originalOutputFormat;
 	if (GET_TC(tc)->citemName)
 	{
 		PyObject_Free(GET_TC(tc)->citemName);
@@ -1131,7 +1141,6 @@ ISITERABLE:
 		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
-			enc->outputFormat = RECORDS;  // for contained index
 			tc->type = JT_OBJECT;
 			pc->iterBegin = Series_iterBegin;
 			pc->iterEnd = Series_iterEnd;
@@ -1198,7 +1207,6 @@ ISITERABLE:
 		if (enc->outputFormat == SPLIT) 
 		{
 			PRINTMARK();
-			enc->outputFormat = RECORDS; // for contained index and series
 			tc->type = JT_OBJECT;
 			pc->iterBegin = DataFrame_iterBegin;
 			pc->iterEnd = DataFrame_iterEnd;
@@ -1471,6 +1479,8 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 			return NULL;
 		}
 	}
+
+	pyEncoder.originalOutputFormat = pyEncoder.outputFormat;
 
 	if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
 	{

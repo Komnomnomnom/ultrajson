@@ -956,10 +956,15 @@ class PandasJSONTests(TestCase):
         self.assertTrue((df == outp).values.all())
         assert_array_equal(df.columns, outp.columns)
 
+        outp = DataFrame(ujson.decode(ujson.encode(df, orient="values")))
+        outp.index = df.index
+        self.assertTrue((df.values == outp.values).all())
+
         outp = DataFrame(ujson.decode(ujson.encode(df, orient="index")))
         self.assertTrue((df.transpose() == outp).values.all())
         assert_array_equal(df.transpose().columns, outp.columns)
         assert_array_equal(df.transpose().index, outp.index)
+
 
     def testDataFrameNumpy(self):
         df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
@@ -979,6 +984,31 @@ class PandasJSONTests(TestCase):
         self.assertTrue((df.transpose() == outp).values.all())
         assert_array_equal(df.transpose().columns, outp.columns)
         assert_array_equal(df.transpose().index, outp.index)
+
+    def testDataFrameNested(self):
+        df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
+
+        nested = {'df1': df, 'df2': df.copy()}
+
+        exp = {'df1': ujson.decode(ujson.encode(df)),
+               'df2': ujson.decode(ujson.encode(df))}
+        self.assertTrue(ujson.decode(ujson.encode(nested)) == exp)
+
+        exp = {'df1': ujson.decode(ujson.encode(df, orient="index")),
+               'df2': ujson.decode(ujson.encode(df, orient="index"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="index")) == exp)
+
+        exp = {'df1': ujson.decode(ujson.encode(df, orient="records")),
+               'df2': ujson.decode(ujson.encode(df, orient="records"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="records")) == exp)
+
+        exp = {'df1': ujson.decode(ujson.encode(df, orient="values")),
+               'df2': ujson.decode(ujson.encode(df, orient="values"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="values")) == exp)
+
+        exp = {'df1': ujson.decode(ujson.encode(df, orient="split")),
+               'df2': ujson.decode(ujson.encode(df, orient="split"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="split")) == exp)
 
     def testDataFrameNumpyLabelled(self):
         df = DataFrame([[1,2,3], [4,5,6]], index=['a', 'b'], columns=['x', 'y', 'z'])
@@ -1026,6 +1056,12 @@ class PandasJSONTests(TestCase):
         outp = Series(ujson.decode(ujson.encode(s, orient="records")))
         self.assertTrue((s == outp).values.all())
 
+        outp = Series(ujson.decode(ujson.encode(s, orient="values"), numpy=True))
+        self.assertTrue((s == outp).values.all())
+
+        outp = Series(ujson.decode(ujson.encode(s, orient="values")))
+        self.assertTrue((s == outp).values.all())
+
         outp = Series(ujson.decode(ujson.encode(s, orient="index")))
         outp.sort()
         self.assertTrue((s == outp).values.all())
@@ -1033,6 +1069,32 @@ class PandasJSONTests(TestCase):
         outp = Series(ujson.decode(ujson.encode(s, orient="index"), numpy=True))
         outp.sort()
         self.assertTrue((s == outp).values.all())
+
+    def testSeriesNested(self):
+        s = Series([10, 20, 30, 40, 50, 60], name="series", index=[6,7,8,9,10,15])
+        s.sort()
+
+        nested = {'s1': s, 's2': s.copy()}
+
+        exp = {'s1': ujson.decode(ujson.encode(s)),
+               's2': ujson.decode(ujson.encode(s))}
+        self.assertTrue(ujson.decode(ujson.encode(nested)) == exp)
+
+        exp = {'s1': ujson.decode(ujson.encode(s, orient="split")),
+               's2': ujson.decode(ujson.encode(s, orient="split"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="split")) == exp)
+
+        exp = {'s1': ujson.decode(ujson.encode(s, orient="records")),
+               's2': ujson.decode(ujson.encode(s, orient="records"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="records")) == exp)
+
+        exp = {'s1': ujson.decode(ujson.encode(s, orient="values")),
+               's2': ujson.decode(ujson.encode(s, orient="values"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="values")) == exp)
+
+        exp = {'s1': ujson.decode(ujson.encode(s, orient="index")),
+               's2': ujson.decode(ujson.encode(s, orient="index"))}
+        self.assertTrue(ujson.decode(ujson.encode(nested, orient="index")) == exp)
 
     def testIndex(self):
         i = Index([23, 45, 18, 98, 43, 11], name="index")
@@ -1051,6 +1113,12 @@ class PandasJSONTests(TestCase):
         outp = Index(**ujson.decode(ujson.encode(i, orient="split"), numpy=True))
         assert_array_equal(i, outp)
         self.assertTrue(i.name == outp.name)
+
+        outp = Index(ujson.decode(ujson.encode(i, orient="values")))
+        assert_array_equal(i, outp)
+
+        outp = Index(ujson.decode(ujson.encode(i, orient="values"), numpy=True))
+        assert_array_equal(i, outp)
 
         outp = Index(ujson.decode(ujson.encode(i, orient="records")))
         assert_array_equal(i, outp)
