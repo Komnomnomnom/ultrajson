@@ -102,10 +102,13 @@ void initObjToJSON(void)
 	PyDateTime_IMPORT;
 
 	PyObject *mod_frame = PyImport_ImportModule("pandas.core.frame");
-	cls_dataframe = PyObject_GetAttrString(mod_frame, "DataFrame");
-	cls_index = PyObject_GetAttrString(mod_frame, "Index");
-	cls_series = PyObject_GetAttrString(mod_frame, "Series");
-	Py_DECREF(mod_frame);
+	if (mod_frame)
+	{
+		cls_dataframe = PyObject_GetAttrString(mod_frame, "DataFrame");
+		cls_index = PyObject_GetAttrString(mod_frame, "Index");
+		cls_series = PyObject_GetAttrString(mod_frame, "Series");
+		Py_DECREF(mod_frame);
+	}
 
 	/* Initialise numpy API */
 	import_array();
