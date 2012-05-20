@@ -616,8 +616,10 @@ char *Index_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 //=============================================================================
 void Series_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	GET_TC(tc)->index = 0;
 	GET_TC(tc)->citemName = PyObject_Malloc(20 * sizeof(char));
+	enc->outputFormat = VALUES; // for contained series
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -632,7 +634,6 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 		return 0;
 	}
 
-	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	Py_ssize_t index = GET_TC(tc)->index;
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
@@ -643,7 +644,6 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 	else
 	if (index == 1)
 	{
-		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
@@ -691,8 +691,10 @@ char *Series_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 //=============================================================================
 void DataFrame_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
+	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	GET_TC(tc)->index = 0;
 	GET_TC(tc)->citemName = PyObject_Malloc(20 * sizeof(char));
+	enc->outputFormat = VALUES; // for contained series & index
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -707,19 +709,16 @@ int DataFrame_iterNext(JSOBJ obj, JSONTypeContext *tc)
 		return 0;
 	}
 
-	PyObjectEncoder* enc = (PyObjectEncoder*) tc->encoder;
 	Py_ssize_t index = GET_TC(tc)->index;
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
 	{
-		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "columns", sizeof(char)*8);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "columns");
 	}
 	else
 	if (index == 1)
 	{
-		enc->outputFormat = VALUES;
 		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
