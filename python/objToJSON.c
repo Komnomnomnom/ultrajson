@@ -838,9 +838,11 @@ void NpyArr_freeLabels(char** labels, npy_intp len)
 char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_intp num)
 {
 	PRINTMARK();
-	npy_intp i, stride, bufsize, len;
+	npy_intp i, stride, len;
+	npy_intp bufsize = 32768;
 	char** ret;
-	char *dataptr, *cLabel;
+	char *dataptr, *cLabel, *origend, *origst, *origoffset;
+	char labelBuffer[bufsize];
 	PyArray_GetItemFunc* getitem;
 
 	if (PyArray_SIZE(labels) < num)
@@ -856,14 +858,29 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 		return 0;
 	}
 
-	bufsize = enc->end - enc->start;
+	for (i = 0; i < num; i++)
+	{
+		ret[i] = NULL;
+	}
+
+	origst = enc->start;
+	origend = enc->end;
+	origoffset = enc->offset;
+
 	stride = PyArray_STRIDE(labels, 0);
 	dataptr = PyArray_DATA(labels);  
 	getitem = PyArray_DESCR(labels)->f->getitem;
 
 	for (i = 0; i < num; i++)
 	{
-		cLabel = JSON_EncodeObject(getitem(dataptr, labels), enc, enc->start, bufsize);
+		cLabel = JSON_EncodeObject(getitem(dataptr, labels), enc, labelBuffer, bufsize);
+
+		if (PyErr_Occurred() || enc->errorMsg)
+		{
+			NpyArr_freeLabels(ret, num);
+			ret = 0;
+			break;
+		}
 
 		// trim off any quotes surrounding the result
 		if (*cLabel == '\"')
@@ -879,14 +896,18 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 		if (!ret[i])
 		{
 			PyErr_NoMemory();
-			return 0;
+			ret = 0;
+			break;
 		}
 
 		memcpy(ret[i], cLabel, sizeof(char)*len);
 		dataptr += stride;
 	}
 
-	enc->offset = enc->start;
+	enc->start = origst;
+	enc->end = origend;
+	enc->offset = origoffset;
+
 	return ret;
 }
 
@@ -1228,6 +1249,8 @@ ISITERABLE:
 			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "columns"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
+				NpyArr_freeLabels(pc->rowLabels, pc->rowLabelsLen);
+				pc->rowLabels = NULL;
 				tc->type = JT_INVALID;
 				return;
 			}
@@ -1247,6 +1270,8 @@ ISITERABLE:
 			pc->columnLabels = NpyArr_encodeLabels((PyArrayObject*) PyObject_GetAttrString(obj, "index"), (JSONObjectEncoder*) enc, pc->columnLabelsLen);
 			if (!pc->columnLabels)
 			{
+				NpyArr_freeLabels(pc->rowLabels, pc->rowLabelsLen);
+				pc->rowLabels = NULL;
 				tc->type = JT_INVALID;
 				return;
 			}
