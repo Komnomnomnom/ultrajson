@@ -276,7 +276,6 @@ void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 	{ 
 		PyMem_Free(GET_TC(tc)->npyarr);
 	}
-	Py_XDECREF(GET_TC(tc)->newObj);
 	PRINTMARK();
 }   
 
