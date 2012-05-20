@@ -570,13 +570,13 @@ int Index_iterNext(JSOBJ obj, JSONTypeContext *tc)
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
 	{
-		memcpy(GET_TC(tc)->citemName, "name", 5);
+		memcpy(GET_TC(tc)->citemName, "name", sizeof(char)*5);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "name");
 	}
 	else
 	if (index == 1)
 	{
-		memcpy(GET_TC(tc)->citemName, "data", 5);
+		memcpy(GET_TC(tc)->citemName, "data", sizeof(char)*5);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
 	}
 	else 
@@ -635,19 +635,19 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
 	{
-		memcpy(GET_TC(tc)->citemName, "name", 5);
+		memcpy(GET_TC(tc)->citemName, "name", sizeof(char)*5);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "name");
 	}
 	else
 	if (index == 1)
 	{
-		memcpy(GET_TC(tc)->citemName, "index", 6);
+		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
 	else
 	if (index == 2)
 	{
-		memcpy(GET_TC(tc)->citemName, "data", 5);
+		memcpy(GET_TC(tc)->citemName, "data", sizeof(char)*5);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
 	}
 	else 
@@ -706,19 +706,19 @@ int DataFrame_iterNext(JSOBJ obj, JSONTypeContext *tc)
 	Py_XDECREF(GET_TC(tc)->itemValue);
 	if (index == 0)
 	{
-		memcpy(GET_TC(tc)->citemName, "columns", 8);
+		memcpy(GET_TC(tc)->citemName, "columns", sizeof(char)*8);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "columns");
 	}
 	else
 	if (index == 1)
 	{
-		memcpy(GET_TC(tc)->citemName, "index", 6);
+		memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
 	}
 	else
 	if (index == 2)
 	{
-		memcpy(GET_TC(tc)->citemName, "data", 5);
+		memcpy(GET_TC(tc)->citemName, "data", sizeof(char)*5);
 		GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
 	}
 	else 
@@ -882,7 +882,7 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 			return 0;
 		}
 
-		memcpy(ret[i], cLabel, len);
+		memcpy(ret[i], cLabel, sizeof(char)*len);
 		dataptr += stride;
 	}
 
