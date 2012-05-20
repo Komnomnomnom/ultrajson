@@ -227,7 +227,7 @@ void NpyArr_iterBegin(JSOBJ _obj, JSONTypeContext *tc)
 	if (PyArray_SIZE(obj) > 0)
 	{
 		PRINTMARK();
-		NpyArrContext *npyarr = PyMem_Malloc(sizeof(NpyArrContext));
+		NpyArrContext *npyarr = PyObject_Malloc(sizeof(NpyArrContext));
 		GET_TC(tc)->npyarr = npyarr;
 
 		if (!npyarr)
@@ -274,7 +274,7 @@ void NpyArr_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->npyarr)
 	{ 
-		PyMem_Free(GET_TC(tc)->npyarr);
+		PyObject_Free(GET_TC(tc)->npyarr);
 	}
 	PRINTMARK();
 }   
@@ -551,7 +551,7 @@ char *List_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void Index_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyObject_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -594,7 +594,7 @@ void Index_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		PyMem_Free(GET_TC(tc)->citemName);
+		PyObject_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -616,7 +616,7 @@ char *Index_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void Series_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyObject_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -665,7 +665,7 @@ void Series_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		PyMem_Free(GET_TC(tc)->citemName);
+		PyObject_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -687,7 +687,7 @@ char *Series_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 void DataFrame_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
 	GET_TC(tc)->index = 0;
-	GET_TC(tc)->citemName = PyMem_Malloc(20 * sizeof(char));
+	GET_TC(tc)->citemName = PyObject_Malloc(20 * sizeof(char));
 	if (!GET_TC(tc)->citemName)
 	{
 		PyErr_NoMemory();
@@ -736,7 +736,7 @@ void DataFrame_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
 	if (GET_TC(tc)->citemName)
 	{
-		PyMem_Free(GET_TC(tc)->citemName);
+		PyObject_Free(GET_TC(tc)->citemName);
 	}
 	PRINTMARK();
 }
@@ -829,9 +829,9 @@ void NpyArr_freeLabels(char** labels, npy_intp len)
 	{
 		for (i = 0; i < len; i++)
 		{
-			PyMem_Free(labels[i]);
+			PyObject_Free(labels[i]);
 		}
-		PyMem_Free(labels);
+		PyObject_Free(labels);
 	}
 }
 
@@ -849,7 +849,7 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 		return 0;
 	}
 
-	ret = PyMem_Malloc(sizeof(char*)*num);
+	ret = PyObject_Malloc(sizeof(char*)*num);
 	if (!ret)
 	{
 		PyErr_NoMemory();
@@ -874,7 +874,7 @@ char** NpyArr_encodeLabels(PyArrayObject* labels, JSONObjectEncoder* enc, npy_in
 		}
 
 		len = enc->offset - cLabel + 1;
-		ret[i] = PyMem_Malloc(sizeof(char)*len);
+		ret[i] = PyObject_Malloc(sizeof(char)*len);
 
 		if (!ret[i])
 		{
