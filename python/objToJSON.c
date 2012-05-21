@@ -175,6 +175,13 @@ static void *PyUnicodeToUTF8(JSOBJ _obj, JSONTypeContext *tc, void *outValue, si
 	return PyString_AS_STRING(newObj);
 }
 
+static void *NpyDateTimeToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
+{
+	PyObject *obj = (PyObject *) _obj;
+	PyArray_CastScalarToCtype(obj, outValue, PyArray_DescrFromType(NPY_DATETIME));
+	return NULL;
+}
+
 static void *PyDateTimeToINT64(JSOBJ _obj, JSONTypeContext *tc, void *outValue, size_t *_outLen)
 {
 	PyObject *obj = (PyObject *) _obj;
@@ -1047,6 +1054,13 @@ void Object_beginTypeContext (JSOBJ _obj, JSONTypeContext *tc)
 	{
 		PRINTMARK();
 		pc->PyTypeToJSON = NpyHalfToDOUBLE; tc->type = JT_DOUBLE;
+		return;
+	}
+	else 
+	if (PyArray_IsScalar(obj, Datetime))
+	{
+		PRINTMARK();
+		pc->PyTypeToJSON = NpyDateTimeToINT64; tc->type = JT_LONG;
 		return;
 	}
 	else 
