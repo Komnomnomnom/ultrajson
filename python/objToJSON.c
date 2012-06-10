@@ -418,24 +418,21 @@ char *Dict_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 
 void Object_beginTypeContext (PyObject *obj, JSONTypeContext *tc)
 {
-	TypeContext *pc = (TypeContext *) tc->prv;
+	TypeContext *pc;
 	PyObject *toDictFunc;
 
-	tc->prv[0] = 0;
-	tc->prv[1] = 0;
-	tc->prv[2] = 0;
-	tc->prv[3] = 0;
-	tc->prv[4] = 0;
-	tc->prv[5] = 0;
-	tc->prv[6] = 0;
-	tc->prv[7] = 0;
-	tc->prv[8] = 0;
-	tc->prv[9] = 0;
-	tc->prv[10] = 0;
-	tc->prv[11] = 0;
-	tc->prv[12] = 0;
-	tc->prv[13] = 0;
-	tc->prv[14] = 0;
+	pc = tc->prv = PyObject_Malloc(sizeof(TypeContext));
+	if (!pc)
+	{
+		tc->type = JT_INVALID;
+		PyErr_NoMemory();
+		return;
+	}
+	pc->newObj = NULL;
+	pc->dictObj = NULL;
+	pc->itemValue = NULL;
+	pc->itemName = NULL;
+	pc->attrList = NULL;
 	
 	if (PyIter_Check(obj))
 	{
@@ -616,6 +613,8 @@ ISITERABLE:
 void Object_endTypeContext(JSOBJ obj, JSONTypeContext *tc)
 {
 	Py_XDECREF(GET_TC(tc)->newObj);
+	PyObject_Free(tc->prv);
+	tc->prv = NULL;
 }
 
 const char *Object_getStringValue(JSOBJ obj, JSONTypeContext *tc, size_t *_outLen)
@@ -690,7 +689,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 	PyObject *oensureAscii = NULL;
 	int idoublePrecision = 5; // default double precision setting
 
-  JSONObjectEncoder encoder = 
+	JSONObjectEncoder encoder = 
 	{
 		Object_beginTypeContext,	//void (*beginTypeContext)(JSOBJ obj, JSONTypeContext *tc);
 		Object_endTypeContext, //void (*endTypeContext)(JSOBJ obj, JSONTypeContext *tc);
@@ -726,7 +725,7 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 		encoder.forceASCII = 0;
 	}
 
-  encoder.doublePrecision = idoublePrecision;
+	encoder.doublePrecision = idoublePrecision;
 
 	PRINTMARK();
 	ret = JSON_EncodeObject (oinput, &encoder, buffer, sizeof (buffer));
