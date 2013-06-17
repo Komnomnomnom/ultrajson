@@ -665,6 +665,7 @@ void encode(JSOBJ obj, JSONObjectEncoder *enc, const char *name, size_t cbName)
   JSOBJ iterObj;
   size_t szlen;
   JSONTypeContext tc;
+  tc.encoder = enc;
 
   if (enc->level > enc->recursionMax)
   {

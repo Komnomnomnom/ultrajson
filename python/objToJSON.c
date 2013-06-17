@@ -1688,15 +1688,15 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 
 	if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
 	{
-		encoder.forceASCII = 0;
+		encoder->forceASCII = 0;
 	}
 
 	if (oencodeHTMLChars != NULL && PyObject_IsTrue(oencodeHTMLChars))
 	{
-		encoder.encodeHTMLChars = 1;
+		encoder->encodeHTMLChars = 1;
 	}
 
-	encoder.doublePrecision = idoublePrecision;
+	encoder->doublePrecision = idoublePrecision;
 
     if (sOrient != NULL)
     {

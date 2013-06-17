@@ -307,7 +307,7 @@ int Object_npyArrayAddItem(void *prv, JSOBJ obj, JSOBJ value)
       ((JSONObjectDecoder*)npyarr->dec)->newArray = Object_npyNewArrayList;
       ((JSONObjectDecoder*)npyarr->dec)->arrayAddItem = Object_npyArrayListAddItem;
       ((JSONObjectDecoder*)npyarr->dec)->endArray = Object_npyEndArrayList;
-      return Object_npyArrayListAddItem(obj, value);
+      return Object_npyArrayListAddItem(prv, obj, value);
     }
 
     npyarr->ret = PyArray_NewFromDescr(&PyArray_Type, dtype, 1,
@@ -417,7 +417,7 @@ JSOBJ Object_npyNewObject(void *prv, void* _decoder)
     return NULL;
   }
 
-  return ((JSONObjectDecoder*)decoder)->newArray(decoder);
+  return ((JSONObjectDecoder*)decoder)->newArray(prv, decoder);
 }
 
 JSOBJ Object_npyEndObject(void *prv, JSOBJ obj)
@@ -440,7 +440,7 @@ JSOBJ Object_npyEndObject(void *prv, JSOBJ obj)
     Py_DECREF(list);
   }
 
-  return (PyObject*) ((JSONObjectDecoder*)npyarr->dec)->endArray(obj);
+  return (PyObject*) ((JSONObjectDecoder*)npyarr->dec)->endArray(prv, obj);
 }
 
 int Object_npyObjectAddKey(void *prv, JSOBJ obj, JSOBJ name, JSOBJ value)
@@ -470,7 +470,7 @@ int Object_npyObjectAddKey(void *prv, JSOBJ obj, JSOBJ name, JSOBJ value)
     PyList_Append(npyarr->labels[labelidx], label);
   }
 
-  if(((JSONObjectDecoder*)npyarr->dec)->arrayAddItem(obj, value))
+  if(((JSONObjectDecoder*)npyarr->dec)->arrayAddItem(prv, obj, value))
   {
     Py_DECREF(label);
     return 1;
@@ -601,7 +601,7 @@ PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
 
   decoder = (JSONObjectDecoder*) &pyDecoder;
 
-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|0iiO&", g_kwlist, &arg, &opreciseFloat, &numpy, &labelled, PyArray_DescrConverter2, &dtype))
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OiiO&", g_kwlist, &arg, &opreciseFloat, &numpy, &labelled, PyArray_DescrConverter2, &dtype))
   {
       Npy_releaseContext(pyDecoder.npyarr);
       return NULL;
@@ -609,7 +609,7 @@ PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
 
   if (opreciseFloat && PyObject_IsTrue(opreciseFloat))
   {
-      decoder.preciseFloat = 1;
+      decoder->preciseFloat = 1;
   }
 
   if (PyString_Check(arg))
@@ -657,12 +657,22 @@ PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
     Py_DECREF(sarg);
   }
 
+  if (PyErr_Occurred())
+  {    
+    if (ret)
+    {
+        Py_DECREF( (PyObject *) ret);
+    }
+    Npy_releaseContext(pyDecoder.npyarr);   
+    return NULL;
+  }
+
   if (decoder->errorStr)
   {
     /*
     FIXME: It's possible to give a much nicer error message here with actual failing element in input etc*/
 
-    PyErr_Format (PyExc_ValueError, "%s", decoder.errorStr);
+    PyErr_Format (PyExc_ValueError, "%s", decoder->errorStr);
 
     if (ret)
     {

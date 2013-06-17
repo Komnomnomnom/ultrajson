@@ -697,7 +697,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
         return ds->dec->endArray(ds->prv, newObj);
       }
 
-      ds->dec->releaseObject(ds->prv, newObj);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
       return SetError(ds, -1, "Unexpected character found when decoding array value (1)");
     }
 
@@ -728,7 +728,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
       break;
 
     default:
-      ds->dec->releaseObject(ds->prv, newObj, ds->dec));
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
       return SetError(ds, -1, "Unexpected character found when decoding array value (2)");
     }
 
@@ -773,8 +773,8 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
 
     if (ds->lastType != JT_UTF8)
     {
-      ds->dec->releaseObject(ds->prv, newObj, ds->dec, ds->dec);
-      ds->dec->releaseObject(ds->prv, itemName, ds->dec, ds->dec);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
+      ds->dec->releaseObject(ds->prv, itemName, ds->dec);
       return SetError(ds, -1, "Key name of object must be 'string' when decoding 'object'");
     }
 
@@ -782,8 +782,8 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
 
     if (*(ds->start++) != ':')
     {
-      ds->dec->releaseObject(ds->prv, newObj);
-      ds->dec->releaseObject(ds->prv, itemName);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
+      ds->dec->releaseObject(ds->prv, itemName, ds->dec);
       return SetError(ds, -1, "No ':' found when decoding object value");
     }
 
@@ -899,7 +899,7 @@ JSOBJ JSON_DecodeObject(JSONObjectDecoder *dec, const char *buffer, size_t cbBuf
 
   if (ds.start != ds.end && ret)
   {
-    dec->releaseObject(ds.prv, ret);
+    dec->releaseObject(ds.prv, ret, ds.dec);
     return SetError(&ds, -1, "Trailing data");
   }
 
