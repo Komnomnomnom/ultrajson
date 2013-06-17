@@ -163,6 +163,7 @@ typedef void * JSITER;
 typedef struct __JSONTypeContext
 {
   int type;
+  void *encoder;
   void *prv;
 } JSONTypeContext;
 
@@ -285,17 +286,19 @@ EXPORTFUNCTION char *JSON_EncodeObject(JSOBJ obj, JSONObjectEncoder *enc, char *
 typedef struct __JSONObjectDecoder
 {
   JSOBJ (*newString)(void *prv, wchar_t *start, wchar_t *end);
-  void (*objectAddKey)(void *prv, JSOBJ obj, JSOBJ name, JSOBJ value);
-  void (*arrayAddItem)(void *prv, JSOBJ obj, JSOBJ value);
+  int (*objectAddKey)(void *prv, JSOBJ obj, JSOBJ name, JSOBJ value);
+  int (*arrayAddItem)(void *prv, JSOBJ obj, JSOBJ value);
   JSOBJ (*newTrue)(void *prv);
   JSOBJ (*newFalse)(void *prv);
   JSOBJ (*newNull)(void *prv);
-  JSOBJ (*newObject)(void *prv);
-  JSOBJ (*newArray)(void *prv);
+  JSOBJ (*newObject)(void *prv, void *decoder);
+  JSOBJ (*endObject)(void *prv, JSOBJ obj);
+  JSOBJ (*newArray)(void *prv, void *decoder);
+  JSOBJ (*endArray)(void *prv, JSOBJ obj);
   JSOBJ (*newInt)(void *prv, JSINT32 value);
   JSOBJ (*newLong)(void *prv, JSINT64 value);
   JSOBJ (*newDouble)(void *prv, double value);
-  void (*releaseObject)(void *prv, JSOBJ obj);
+  void (*releaseObject)(void *prv, JSOBJ obj, void *decoder);
   JSPFN_MALLOC malloc;
   JSPFN_FREE free;
   JSPFN_REALLOC realloc;

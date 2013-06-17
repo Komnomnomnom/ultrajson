@@ -678,7 +678,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
     return SetError(ds, -1, "Reached object decoding depth limit");
   }
 
-  newObj = ds->dec->newArray(ds->prv);
+  newObj = ds->dec->newArray(ds->prv, ds->dec);
   len = 0;
 
   ds->lastType = JT_INVALID;
@@ -694,7 +694,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
       if (len == 0)
       {
         ds->start ++;
-        return newObj;
+        return ds->dec->endArray(ds->prv, newObj);
       }
 
       ds->dec->releaseObject(ds->prv, newObj);
@@ -705,11 +705,15 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
 
     if (itemValue == NULL)
     {
-      ds->dec->releaseObject(ds->prv, newObj);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
       return NULL;
     }
 
-    ds->dec->arrayAddItem (ds->prv, newObj, itemValue);
+    if (!ds->dec->arrayAddItem (ds->prv, newObj, itemValue))
+    {
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
+      return NULL;
+    }
 
     SkipWhitespace(ds);
 
@@ -718,13 +722,13 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_array(struct DecoderState *ds)
     case ']':
     {
       ds->objDepth--;
-      return newObj;
+      return ds->dec->endArray(ds->prv, newObj);
     }
     case ',':
       break;
 
     default:
-      ds->dec->releaseObject(ds->prv, newObj);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec));
       return SetError(ds, -1, "Unexpected character found when decoding array value (2)");
     }
 
@@ -743,7 +747,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
     return SetError(ds, -1, "Reached object decoding depth limit");
   }
 
-  newObj = ds->dec->newObject(ds->prv);
+  newObj = ds->dec->newObject(ds->prv, ds->dec);
 
   ds->start ++;
 
@@ -755,7 +759,7 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
     {
       ds->objDepth--;
       ds->start ++;
-      return newObj;
+      return ds->dec->endObject(ds->prv, newObj);
     }
 
     ds->lastType = JT_INVALID;
@@ -763,14 +767,14 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
 
     if (itemName == NULL)
     {
-      ds->dec->releaseObject(ds->prv, newObj);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
       return NULL;
     }
 
     if (ds->lastType != JT_UTF8)
     {
-      ds->dec->releaseObject(ds->prv, newObj);
-      ds->dec->releaseObject(ds->prv, itemName);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec, ds->dec);
+      ds->dec->releaseObject(ds->prv, itemName, ds->dec, ds->dec);
       return SetError(ds, -1, "Key name of object must be 'string' when decoding 'object'");
     }
 
@@ -789,12 +793,18 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
 
     if (itemValue == NULL)
     {
-      ds->dec->releaseObject(ds->prv, newObj);
-      ds->dec->releaseObject(ds->prv, itemName);
+      ds->dec->releaseObject(ds->prv, newObj, ds->dec);
+      ds->dec->releaseObject(ds->prv, itemName, ds->dec);
       return NULL;
     }
 
-    ds->dec->objectAddKey (ds->prv, newObj, itemName, itemValue);
+  if (!ds->dec->objectAddKey (ds->prv, newObj, itemName, itemValue)) 
+  {
+    ds->dec->releaseObject(ds->prv, newObj, ds->dec);
+    ds->dec->releaseObject(ds->prv, itemName, ds->dec);
+    ds->dec->releaseObject(ds->prv, itemValue, ds->dec);
+    return NULL;
+  }
 
     SkipWhitespace(ds);
 
@@ -803,13 +813,13 @@ FASTCALL_ATTR JSOBJ FASTCALL_MSVC decode_object( struct DecoderState *ds)
       case '}':
       {
         ds->objDepth--;
-        return newObj;
+        return ds->dec->endObject(ds->prv, newObj);
       }
       case ',':
         break;
 
       default:
-        ds->dec->releaseObject(ds->prv, newObj);
+        ds->dec->releaseObject(ds->prv, newObj, ds->dec);
         return SetError(ds, -1, "Unexpected character in found when decoding object value");
     }
   }
