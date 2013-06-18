@@ -369,9 +369,9 @@ SETERROR:
 
 FASTCALL_ATTR void FASTCALL_MSVC SkipWhitespace(struct DecoderState *ds)
 {
-  char *offset = ds->start;
+  char *offset;
 
-  for (;;)
+  for (offset = ds->start; (ds->end - offset) > 0; offset ++)
   {
     switch (*offset)
     {
@@ -379,13 +379,17 @@ FASTCALL_ATTR void FASTCALL_MSVC SkipWhitespace(struct DecoderState *ds)
       case '\t':
       case '\r':
       case '\n':
-        offset ++;
         break;
 
       default:
         ds->start = offset;
         return;
     }
+  }
+
+  if (offset == ds->end)
+  {
+    ds->start = ds->end;
   }
 }
 
