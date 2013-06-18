@@ -812,22 +812,22 @@ int Series_iterNext(JSOBJ obj, JSONTypeContext *tc)
     GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "name");
   }
   else
-    if (index == 1)
-    {
-      memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
-      GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
-    }
-    else
-      if (index == 2)
-      {
-        memcpy(GET_TC(tc)->citemName, "data", sizeof(char)*5);
-        GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
-      }
-      else
-      {
-        PRINTMARK();
-        return 0;
-      }
+  if (index == 1)
+  {
+    memcpy(GET_TC(tc)->citemName, "index", sizeof(char)*6);
+    GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "index");
+  }
+  else
+  if (index == 2)
+  {
+    memcpy(GET_TC(tc)->citemName, "data", sizeof(char)*5);
+    GET_TC(tc)->itemValue = PyObject_GetAttrString(obj, "values");
+  }
+  else
+  {
+    PRINTMARK();
+    return 0;
+  }
 
   GET_TC(tc)->index++;
   PRINTMARK();
@@ -1602,39 +1602,39 @@ JSINT32 Object_getIntValue(JSOBJ obj, JSONTypeContext *tc)
 
 double Object_getDoubleValue(JSOBJ obj, JSONTypeContext *tc)
 {
-	double ret;
-	GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
-	return ret;
+  double ret;
+  GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
+  return ret;
 }
 
 static void Object_releaseObject(JSOBJ _obj)
 {
-	Py_DECREF( (PyObject *) _obj);
+  Py_DECREF( (PyObject *) _obj);
 }
 
 void Object_iterBegin(JSOBJ obj, JSONTypeContext *tc)
 {
-	GET_TC(tc)->iterBegin(obj, tc);
+  GET_TC(tc)->iterBegin(obj, tc);
 }
 
 int Object_iterNext(JSOBJ obj, JSONTypeContext *tc)
 {
-	return GET_TC(tc)->iterNext(obj, tc);
+  return GET_TC(tc)->iterNext(obj, tc);
 }
 
 void Object_iterEnd(JSOBJ obj, JSONTypeContext *tc)
 {
-	GET_TC(tc)->iterEnd(obj, tc);
+  GET_TC(tc)->iterEnd(obj, tc);
 }
 
 JSOBJ Object_iterGetValue(JSOBJ obj, JSONTypeContext *tc)
 {
-	return GET_TC(tc)->iterGetValue(obj, tc);
+  return GET_TC(tc)->iterGetValue(obj, tc);
 }
 
 char *Object_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 {
-	return GET_TC(tc)->iterGetName(obj, tc, outLen);
+  return GET_TC(tc)->iterGetName(obj, tc, outLen);
 }
 
 PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
@@ -1762,63 +1762,65 @@ PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 
 PyObject* objToJSONFile(PyObject* self, PyObject *args, PyObject *kwargs)
 {
-	PyObject *data;
-	PyObject *file;
-	PyObject *string;
-	PyObject *write;
-	PyObject *argtuple;
+  PyObject *data;
+  PyObject *file;
+  PyObject *string;
+  PyObject *write;
+  PyObject *argtuple;
 
-	PRINTMARK();
+  PRINTMARK();
 
-	if (!PyArg_ParseTuple (args, "OO", &data, &file)) {
-		return NULL;
-	}
+  if (!PyArg_ParseTuple (args, "OO", &data, &file))
+  {
+    return NULL;
+  }
 
-	if (!PyObject_HasAttrString (file, "write"))
-	{
-		PyErr_Format (PyExc_TypeError, "expected file");
-		return NULL;
-	}
+  if (!PyObject_HasAttrString (file, "write"))
+  {
+    PyErr_Format (PyExc_TypeError, "expected file");
+    return NULL;
+  }
 
-	write = PyObject_GetAttrString (file, "write");
+  write = PyObject_GetAttrString (file, "write");
 
-	if (!PyCallable_Check (write)) {
-		Py_XDECREF(write);
-		PyErr_Format (PyExc_TypeError, "expected file");
-		return NULL;
-	}
+  if (!PyCallable_Check (write))
+  {
+    Py_XDECREF(write);
+    PyErr_Format (PyExc_TypeError, "expected file");
+    return NULL;
+  }
 
-	argtuple = PyTuple_Pack(1, data);
+  argtuple = PyTuple_Pack(1, data);
 
-	string = objToJSON (self, argtuple, kwargs);
+  string = objToJSON (self, argtuple, kwargs);
 
-	if (string == NULL)
-	{
-		Py_XDECREF(write);
-		Py_XDECREF(argtuple);
-		return NULL;
-	}
+  if (string == NULL)
+  {
+    Py_XDECREF(write);
+    Py_XDECREF(argtuple);
+    return NULL;
+  }
 
-	Py_XDECREF(argtuple);
+  Py_XDECREF(argtuple);
 
-	argtuple = PyTuple_Pack (1, string);
-	if (argtuple == NULL)
-	{
-		Py_XDECREF(write);
-		return NULL;
-	}
-	if (PyObject_CallObject (write, argtuple) == NULL)
-	{
-		Py_XDECREF(write);
-		Py_XDECREF(argtuple);
-		return NULL;
-	}
+  argtuple = PyTuple_Pack (1, string);
+  if (argtuple == NULL)
+  {
+    Py_XDECREF(write);
+    return NULL;
+  }
+  if (PyObject_CallObject (write, argtuple) == NULL)
+  {
+    Py_XDECREF(write);
+    Py_XDECREF(argtuple);
+    return NULL;
+  }
 
-	Py_XDECREF(write);
-	Py_DECREF(argtuple);
-	Py_XDECREF(string);
+  Py_XDECREF(write);
+  Py_DECREF(argtuple);
+  Py_XDECREF(string);
 
-	PRINTMARK();
+  PRINTMARK();
 
-	Py_RETURN_NONE;
+  Py_RETURN_NONE;
 }
