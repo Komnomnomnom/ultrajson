@@ -1,3 +1,8 @@
+
+THIS CODE IS NOW OUT OF DATE, README KEPT FOR REFERENCE, PLEASE CHECK THE FORK OF UJSON BUNDLED IN [PANDAS](https://github.com/pydata/pandas) IF YOU ARE INTERESTED.
+===
+
+
 A fork of UltraJSON supporting direct encoding / decoding of numpy and pandas
 types.
 
