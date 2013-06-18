@@ -138,7 +138,7 @@ enum PANDAS_FORMAT
 //#define PRINTMARK() fprintf(stderr, "%s: MARK(%d)\n", __FILE__, __LINE__)
 #define PRINTMARK()
 
-#if (PY_VERSION_HEX >= 0x03000000)
+#if (PY_VERSION_HEX < 0x03000000)
 void initObjToJSON(void)
 #else
 int initObjToJSON(void)
@@ -1577,27 +1577,27 @@ void Object_endTypeContext(JSOBJ obj, JSONTypeContext *tc)
     NpyArr_freeLabels(GET_TC(tc)->rowLabels, GET_TC(tc)->rowLabelsLen);
     NpyArr_freeLabels(GET_TC(tc)->columnLabels, GET_TC(tc)->columnLabelsLen);
 
-	PyObject_Free(tc->prv);
-	tc->prv = NULL;
+    PyObject_Free(tc->prv);
+    tc->prv = NULL;
 }
 
 const char *Object_getStringValue(JSOBJ obj, JSONTypeContext *tc, size_t *_outLen)
 {
-	return GET_TC(tc)->PyTypeToJSON (obj, tc, NULL, _outLen);
+  return GET_TC(tc)->PyTypeToJSON (obj, tc, NULL, _outLen);
 }
 
 JSINT64 Object_getLongValue(JSOBJ obj, JSONTypeContext *tc)
 {
-	JSINT64 ret;
-	GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
-	return ret;
+  JSINT64 ret;
+  GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
+  return ret;
 }
 
 JSINT32 Object_getIntValue(JSOBJ obj, JSONTypeContext *tc)
 {
-	JSINT32 ret;
-	GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
-	return ret;
+  JSINT32 ret;
+  GET_TC(tc)->PyTypeToJSON (obj, tc, &ret, NULL);
+  return ret;
 }
 
 double Object_getDoubleValue(JSOBJ obj, JSONTypeContext *tc)
@@ -1639,125 +1639,125 @@ char *Object_iterGetName(JSOBJ obj, JSONTypeContext *tc, size_t *outLen)
 
 PyObject* objToJSON(PyObject* self, PyObject *args, PyObject *kwargs)
 {
-	static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "encode_html_chars", "orient", NULL};
+  static char *kwlist[] = { "obj", "ensure_ascii", "double_precision", "encode_html_chars", "orient", NULL};
 
-	char buffer[65536];
-	char *ret;
-	PyObject *newobj;
-	PyObject *oinput = NULL;
-	PyObject *oensureAscii = NULL;
-	int idoublePrecision = 10; // default double precision setting
-	PyObject *oencodeHTMLChars = NULL;
-    char *sOrient = NULL;
+  char buffer[65536];
+  char *ret;
+  PyObject *newobj;
+  PyObject *oinput = NULL;
+  PyObject *oensureAscii = NULL;
+  int idoublePrecision = 10; // default double precision setting
+  PyObject *oencodeHTMLChars = NULL;
+  char *sOrient = NULL;
 
-    PyObjectEncoder pyEncoder =
+  PyObjectEncoder pyEncoder =
+  {
     {
-      {
-          Object_beginTypeContext,
-          Object_endTypeContext,
-          Object_getStringValue,
-          Object_getLongValue,
-          Object_getIntValue,
-          Object_getDoubleValue,
-          Object_iterBegin,
-          Object_iterNext,
-          Object_iterEnd,
-          Object_iterGetValue,
-          Object_iterGetName,
-          Object_releaseObject,
-          PyObject_Malloc,
-          PyObject_Realloc,
-          PyObject_Free,
-          -1, //recursionMax
-          idoublePrecision,
-          1, //forceAscii
-          0, //encodeHTMLChars
-      }
-	};
-    JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
+        Object_beginTypeContext,
+        Object_endTypeContext,
+        Object_getStringValue,
+        Object_getLongValue,
+        Object_getIntValue,
+        Object_getDoubleValue,
+        Object_iterBegin,
+        Object_iterNext,
+        Object_iterEnd,
+        Object_iterGetValue,
+        Object_iterGetName,
+        Object_releaseObject,
+        PyObject_Malloc,
+        PyObject_Realloc,
+        PyObject_Free,
+        -1, //recursionMax
+        idoublePrecision,
+        1, //forceAscii
+        0, //encodeHTMLChars
+    }
+  };
+  JSONObjectEncoder* encoder = (JSONObjectEncoder*) &pyEncoder;
 
-    pyEncoder.npyCtxtPassthru = NULL;
-    pyEncoder.outputFormat = COLUMNS;
+  pyEncoder.npyCtxtPassthru = NULL;
+  pyEncoder.outputFormat = COLUMNS;
 
-	PRINTMARK();
+  PRINTMARK();
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OiOs", kwlist, &oinput, &oensureAscii, &idoublePrecision, &oencodeHTMLChars, &sOrient))
-	{
-		return NULL;
-	}
+  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|OiOs", kwlist, &oinput, &oensureAscii, &idoublePrecision, &oencodeHTMLChars, &sOrient))
+  {
+    return NULL;
+  }
 
-	if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
-	{
-		encoder->forceASCII = 0;
-	}
+  if (oensureAscii != NULL && !PyObject_IsTrue(oensureAscii))
+  {
+    encoder->forceASCII = 0;
+  }
 
-	if (oencodeHTMLChars != NULL && PyObject_IsTrue(oencodeHTMLChars))
-	{
-		encoder->encodeHTMLChars = 1;
-	}
+  if (oencodeHTMLChars != NULL && PyObject_IsTrue(oencodeHTMLChars))
+  {
+    encoder->encodeHTMLChars = 1;
+  }
 
-	encoder->doublePrecision = idoublePrecision;
+  encoder->doublePrecision = idoublePrecision;
 
-    if (sOrient != NULL)
+  if (sOrient != NULL)
+  {
+    if (strcmp(sOrient, "records") == 0)
     {
-      if (strcmp(sOrient, "records") == 0)
-      {
-        pyEncoder.outputFormat = RECORDS;
-      }
-      else
-      if (strcmp(sOrient, "index") == 0)
-      {
-        pyEncoder.outputFormat = INDEX;
-      }
-      else
-      if (strcmp(sOrient, "split") == 0)
-      {
-        pyEncoder.outputFormat = SPLIT;
-      }
-      else
-      if (strcmp(sOrient, "values") == 0)
-      {
-        pyEncoder.outputFormat = VALUES;
-      }
-      else
-      if (strcmp(sOrient, "columns") != 0)
-      {
-        PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'orient'", sOrient);
-        return NULL;
-      }
+      pyEncoder.outputFormat = RECORDS;
+    }
+    else
+    if (strcmp(sOrient, "index") == 0)
+    {
+      pyEncoder.outputFormat = INDEX;
+    }
+    else
+    if (strcmp(sOrient, "split") == 0)
+    {
+      pyEncoder.outputFormat = SPLIT;
+    }
+    else
+    if (strcmp(sOrient, "values") == 0)
+    {
+      pyEncoder.outputFormat = VALUES;
+    }
+    else
+    if (strcmp(sOrient, "columns") != 0)
+    {
+      PyErr_Format (PyExc_ValueError, "Invalid value '%s' for option 'orient'", sOrient);
+      return NULL;
+    }
+  }
+
+  pyEncoder.originalOutputFormat = pyEncoder.outputFormat;
+  PRINTMARK();
+  ret = JSON_EncodeObject (oinput, encoder, buffer, sizeof (buffer));
+  PRINTMARK();
+
+  if (PyErr_Occurred())
+  {
+    return NULL;
+  }
+
+  if (encoder->errorMsg)
+  {
+    if (ret != buffer)
+    {
+      encoder->free (ret);
     }
 
-    pyEncoder.originalOutputFormat = pyEncoder.outputFormat;
-	PRINTMARK();
-	ret = JSON_EncodeObject (oinput, encoder, buffer, sizeof (buffer));
-	PRINTMARK();
+    PyErr_Format (PyExc_OverflowError, "%s", encoder->errorMsg);
+    return NULL;
+  }
 
-	if (PyErr_Occurred())
-	{
-		return NULL;
-	}
+  newobj = PyString_FromString (ret);
 
-	if (encoder->errorMsg)
-	{
-		if (ret != buffer)
-		{
-			encoder->free (ret);
-		}
+  if (ret != buffer)
+  {
+    encoder->free (ret);
+  }
 
-		PyErr_Format (PyExc_OverflowError, "%s", encoder->errorMsg);
-		return NULL;
-	}
+  PRINTMARK();
 
-	newobj = PyString_FromString (ret);
-
-	if (ret != buffer)
-	{
-		encoder->free (ret);
-	}
-
-	PRINTMARK();
-
-	return newobj;
+  return newobj;
 }
 
 PyObject* objToJSONFile(PyObject* self, PyObject *args, PyObject *kwargs)
